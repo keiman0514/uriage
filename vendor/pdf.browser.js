@@ -15967,7 +15967,7 @@ class DOMFilterFactory extends BaseFilterFactory {
 if (isNodeJS) {
   let canvas;
   try {
-    const require = process.getBuiltinModule("module").createRequire(import.meta.url);
+    const require = process.getBuiltinModule("module").createRequire((globalThis.location?.href || ""));
     try {
       canvas = require("@napi-rs/canvas");
     } catch (ex) {
@@ -16013,7 +16013,7 @@ async function node_utils_fetchData(url) {
 class NodeFilterFactory extends BaseFilterFactory {}
 class NodeCanvasFactory extends BaseCanvasFactory {
   _createCanvas(width, height) {
-    const require = process.getBuiltinModule("module").createRequire(import.meta.url);
+    const require = process.getBuiltinModule("module").createRequire((globalThis.location?.href || ""));
     const canvas = require("@napi-rs/canvas");
     return canvas.createCanvas(width, height);
   }
@@ -20211,7 +20211,7 @@ function getReadableStream(readStream) {
   if (typeof Readable.toWeb === "function") {
     return Readable.toWeb(readStream);
   }
-  const require = process.getBuiltinModule("module").createRequire(import.meta.url);
+  const require = process.getBuiltinModule("module").createRequire((globalThis.location?.href || ""));
   const polyfill = require("node-readable-to-web-readable-stream");
   return polyfill.makeDefaultReadableStreamFromNodeReadable(readStream);
 }

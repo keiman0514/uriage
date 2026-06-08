@@ -1,6 +1,8 @@
-const pdfjsLib = globalThis.pdfjsLib || null;
-if (pdfjsLib?.GlobalWorkerOptions) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.mjs";
+const APP_ASSET_VERSION = "20260608-pdf-loader-2";
+const APP_BASE_URL = new URL(".", document.currentScript?.src || location.href).href;
+let pdfjsLib = globalThis.pdfjsLib || null;
+if (pdfjsLib?.getDocument) {
+  configurePdfJs(pdfjsLib);
 }
 
 const STORAGE_KEY = "nishiogi-sales-dashboard-v1";
@@ -312,12 +314,10 @@ async function parseSalesWorkbook(file) {
 }
 
 async function parseFinancialPdf(file) {
-  if (!pdfjsLib?.getDocument) {
-    throw new Error("PDF読み込み部品が見つかりません");
-  }
+  const pdfModule = await ensurePdfJs();
   const monthInfo = parseMonthFromName(file.name, "pdf");
   const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({
+  const pdf = await pdfModule.getDocument({
     data: arrayBuffer,
     disableWorker: location.protocol === "file:",
   }).promise;
@@ -373,6 +373,30 @@ async function parseFinancialPdf(file) {
     profitCumulative: profit[2] ?? null,
     profitPriorYear: profit[3] ?? null,
   };
+}
+
+async function ensurePdfJs() {
+  if (pdfjsLib?.getDocument) {
+    configurePdfJs(pdfjsLib);
+    return pdfjsLib;
+  }
+
+  try {
+    const pdfUrl = new URL(`vendor/pdf.min.mjs?v=${APP_ASSET_VERSION}`, APP_BASE_URL).href;
+    pdfjsLib = await import(pdfUrl);
+    globalThis.pdfjsLib = pdfjsLib;
+    configurePdfJs(pdfjsLib);
+    return pdfjsLib;
+  } catch (error) {
+    console.error(error);
+    throw new Error(`PDF読み込み部品を読み込めません: ${error.message}`);
+  }
+}
+
+function configurePdfJs(pdfModule) {
+  if (pdfModule?.GlobalWorkerOptions) {
+    pdfModule.GlobalWorkerOptions.workerSrc = new URL(`vendor/pdf.worker.min.mjs?v=${APP_ASSET_VERSION}`, APP_BASE_URL).href;
+  }
 }
 
 function parseMonthFromName(name, type) {
