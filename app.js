@@ -1,4 +1,4 @@
-const APP_ASSET_VERSION = "20260608-save-5";
+const APP_ASSET_VERSION = "20260608-yoy-6";
 const APP_BASE_URL = new URL(".", document.currentScript?.src || location.href).href;
 let pdfjsLib = globalThis.pdfjsLib || null;
 if (pdfjsLib?.getDocument) {
@@ -640,7 +640,7 @@ function renderOverviewTable(allMonthlyRows) {
   }
 
   els.overviewTable.innerHTML = table(
-    ["月", "売上", "前月比", "昨年対", "人件費", "人件費率", "前月比", "昨年対", "原価", "原価率", "前月比", "昨年対", "利益", "前月差", "昨年差"],
+    ["月", "売上", "前月比", "前年比", "人件費", "人件費率", "前月比", "前年比", "原価", "原価率", "前月比", "前年比", "利益", "前月差", "前年差"],
     rows.map((item) => {
       const previousMonth = allMonthlyRows.find((target) => target.key === previousMonthKey(item.key));
       const previousYear = allMonthlyRows.find((target) => target.year === item.year - 1 && target.month === item.month);
@@ -694,9 +694,9 @@ function renderMonthDetail(monthly) {
   const hasDailyExcel = rows.length > 0;
   els.monthDetailTitle.textContent = `${item.year}年${item.month}月の状態`;
   els.monthDetailKpis.innerHTML = [
-    ["売上", yen(item.sales), marker(item.yoy.sales, "昨年対"), tone(item.yoy.sales)],
-    ["客数", hasDailyExcel ? `${integer(item.customers)}人` : "-", hasDailyExcel ? marker(item.yoy.customers, "昨年対") : "営業日報Excel未登録", hasDailyExcel ? tone(item.yoy.customers) : "warn"],
-    ["客単価", hasDailyExcel ? yen(item.unit) : "-", hasDailyExcel ? marker(item.yoy.unit, "昨年対") : "営業日報Excel未登録", hasDailyExcel ? tone(item.yoy.unit) : "warn"],
+    ["売上", yen(item.sales), marker(item.yoy.sales, "前年比"), tone(item.yoy.sales)],
+    ["客数", hasDailyExcel ? `${integer(item.customers)}人` : "-", hasDailyExcel ? marker(item.yoy.customers, "前年比") : "営業日報Excel未登録", hasDailyExcel ? tone(item.yoy.customers) : "warn"],
+    ["客単価", hasDailyExcel ? yen(item.unit) : "-", hasDailyExcel ? marker(item.yoy.unit, "前年比") : "営業日報Excel未登録", hasDailyExcel ? tone(item.yoy.unit) : "warn"],
     ["ドリンク率", hasDailyExcel ? percent(item.drinkRatio) : "-", hasDailyExcel ? `ドリンク ${yen(item.drink)}` : "営業日報Excel未登録", hasDailyExcel ? "" : "warn"],
     ["人件費率", percent(currentMetrics.laborRatio), `人件費 ${yen(item.laborCost)}`, ""],
     ["原価率", percent(currentMetrics.costRatio), `原価 ${yen(item.cost)}`, ""],
@@ -714,7 +714,7 @@ function renderMonthDetail(monthly) {
     .join("");
 
   els.monthDetailCompare.innerHTML = table(
-    ["指標", `${item.year}年${item.month}月`, "昨年対", "前月比"],
+    ["指標", `${item.year}年${item.month}月`, "前年比", "前月比"],
     [
       metricCompareRow("売上", currentMetrics.sales, previousMetrics.sales, previousMonthMetrics.sales, "yen"),
       metricCompareRow("1日平均", currentMetrics.avgDailySales, previousMetrics.avgDailySales, previousMonthMetrics.avgDailySales, "yen", !hasDailyExcel),
@@ -879,7 +879,7 @@ function renderMonthlyChart(monthly) {
     return;
   }
   els.monthlyChart.innerHTML = table(
-    ["月", "売上", "昨年対", "客数", "昨年対", "客単価", "昨年対", "ドリンク率", "利益", "判定"],
+    ["月", "売上", "前年比", "客数", "前年比", "客単価", "前年比", "ドリンク率", "利益", "判定"],
     monthly
       .slice()
       .reverse()
@@ -908,7 +908,7 @@ function renderLaborView(monthly) {
   }
 
   els.laborChart.innerHTML = table(
-    ["月", "人件費", "人件費率", "昨年対", "前月比", "原価率", "昨年対", "前月比", "利益"],
+    ["月", "人件費", "人件費率", "前年比", "前月比", "原価率", "前年比", "前月比", "利益"],
     rows.map((item) => {
       const previousYear = monthly.find((target) => target.year === item.year - 1 && target.month === item.month);
       const previousMonth = monthly.find((target) => target.key === previousMonthKey(item.key));
@@ -972,7 +972,7 @@ function renderDrinkView(monthly) {
   }));
   els.drinkChart.innerHTML = categoryBarChart(labels, series, { formatter: compactYen });
   els.drinkTable.innerHTML = table(
-    ["月", "ドリンク売上", "ドリンク率", "総売上", "ドリンク昨年対", "ドリンク率昨年対"],
+    ["月", "ドリンク売上", "ドリンク率", "総売上", "ドリンク前年比", "ドリンク率前年比"],
     rows
       .slice()
       .reverse()
@@ -1226,7 +1226,7 @@ function renderInsights(monthly) {
   const latest = [...monthly].reverse().find((item) => item.sales);
   if (latest) {
     insights.push(
-      `${latest.label}の売上は${yen(latest.sales)}、昨年対は${signedPct(latest.yoy.sales)}です。客数は${signedPct(latest.yoy.customers)}、客単価は${signedPct(latest.yoy.unit)}でした。`,
+      `${latest.label}の売上は${yen(latest.sales)}、前年比は${signedPct(latest.yoy.sales)}です。客数は${signedPct(latest.yoy.customers)}、客単価は${signedPct(latest.yoy.unit)}でした。`,
     );
     if (latest.profit !== null) {
       insights.push(`${latest.label}の利益は${yen(latest.profit)}で、${latest.profit >= 0 ? "黒字" : "赤字"}です。`);
@@ -1310,7 +1310,7 @@ function renderMonthlyTable(monthly) {
       signedPct(item.yoy.customers),
       signedPct(item.yoy.unit),
     ]);
-  els.monthlyTable.innerHTML = table(["月", "売上", "客数", "客単価", "ランチ", "ドリンク", "ドリンク率", "利益", "判定", "売上昨年対", "客数昨年対", "単価昨年対"], rows);
+  els.monthlyTable.innerHTML = table(["月", "売上", "客数", "客単価", "ランチ", "ドリンク", "ドリンク率", "利益", "判定", "売上前年比", "客数前年比", "単価前年比"], rows);
 }
 
 function setDefaultPeriods(monthly) {
