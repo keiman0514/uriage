@@ -1,4 +1,4 @@
-const APP_ASSET_VERSION = "20260608-pdf-loader-2";
+const APP_ASSET_VERSION = "20260608-pdf-parser-3";
 const APP_BASE_URL = new URL(".", document.currentScript?.src || location.href).href;
 let pdfjsLib = globalThis.pdfjsLib || null;
 if (pdfjsLib?.getDocument) {
@@ -9,6 +9,7 @@ const STORAGE_KEY = "nishiogi-sales-dashboard-v1";
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const WEEKDAY_ORDER = ["月", "火", "水", "木", "金", "土", "日"];
 const CHART_COLORS = ["#0f7a68", "#b86b00", "#355f7c", "#9a4f17", "#52796f", "#6d5c3f"];
+const PDF_SECTION_SPLIT_PATTERN = /(?=売\s*上\s*Ａ|月\s*内\s*仕\s*入|原\s*価|売\s*上\s*利\s*益|経費合計|人件費|水道光熱費|消耗品費|その他\s*4|利\s*益\s*H)/g;
 
 let usedEmbeddedSample = false;
 let activeMonthKey = "";
@@ -326,8 +327,8 @@ async function parseFinancialPdf(file) {
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
     const textContent = await page.getTextContent();
-    const text = textContent.items.map((item) => item.str).join(" ");
-    lines.push(...text.split(/\n|(?=売 上 Ａ|月 内 仕 入|原 価|売 上 利 益|経費合計|人件費|水道光熱費|消耗品費|その他 4|利 益 H)/g));
+    const text = textContent.items.map((item) => item.str).join(" ").replace(/\s+/g, " ").trim();
+    lines.push(...text.split(PDF_SECTION_SPLIT_PATTERN));
   }
 
   const compactLines = lines.map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
@@ -336,16 +337,16 @@ async function parseFinancialPdf(file) {
     return line ? extractAmounts(line) : [];
   };
 
-  const sales = pick(/^売 上 Ａ/);
-  const purchase = pick(/^月 内 仕 入/);
-  const cost = pick(/^原 価/);
-  const grossProfit = pick(/^売 上 利 益/);
+  const sales = pick(/^売\s*上\s*Ａ/);
+  const purchase = pick(/^月\s*内\s*仕\s*入/);
+  const cost = pick(/^原\s*価/);
+  const grossProfit = pick(/^売\s*上\s*利\s*益/);
   const expenses = pick(/^経費合計/);
   const laborCost = pick(/^人件費/);
   const utilities = pick(/^水道光熱費/);
   const supplies = pick(/^消耗品費/);
-  const otherExpenses = pick(/^その他 4/);
-  const profit = pick(/^利 益 H/);
+  const otherExpenses = pick(/^その他\s*4/);
+  const profit = pick(/^利\s*益\s*H/);
 
   if (!sales.length || !profit.length) throw new Error("PDFの売上・利益を読み取れませんでした");
 
