@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>店舗売上データベース</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./vendor/jszip.min.js"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="header-copy">
+        <p class="eyebrow">Nishiogi Performance Database</p>
+        <h1>店舗売上データベース</h1>
+        <p class="header-lead">売上・客数・人件費・原価率を、月ごとにすぐ判断できる形へ。</p>
+      </div>
+      <div class="header-actions">
+        <label class="ghost-button">
+          バックアップ読込
+          <input id="restoreInput" type="file" accept="application/json,.json" hidden />
+        </label>
+        <button id="backupButton" type="button" class="ghost-button">バックアップ保存</button>
+        <button id="clearButton" type="button" class="danger-button">全削除</button>
+      </div>
+      <div class="header-visual" aria-hidden="true"></div>
+    </header>
+
+    <main class="layout">
+      <section class="drop-section">
+        <div id="dropZone" class="drop-zone" tabindex="0">
+          <div class="drop-icon">↓</div>
+          <div>
+            <h2>Excel / PDF をここにドロップ</h2>
+            <p>営業日報の xlsm/xlsx と、本社の営業報告書 PDF をまとめて登録できます。</p>
+          </div>
+          <label class="primary-button">
+            ファイルを選ぶ
+            <input id="fileInput" type="file" multiple accept=".xlsm,.xlsx,.pdf,.json,application/pdf,application/json" hidden />
+          </label>
+        </div>
+        <div id="message" class="message" role="status"></div>
+      </section>
+
+      <section class="controls-panel">
+        <div class="control-group">
+          <label for="yearSelect">表示年</label>
+          <select id="yearSelect"></select>
+        </div>
+        <div class="control-group">
+          <label for="monthSelect">対象月</label>
+          <div class="inline-control">
+            <select id="monthSelect"></select>
+            <button id="monthApplyButton" type="button" class="primary-button">表示</button>
+          </div>
+        </div>
+        <div class="control-group">
+          <label for="weekendMode">週末の扱い</label>
+          <select id="weekendMode">
+            <option value="satSun">土日</option>
+            <option value="friSatSun">金土日</option>
+          </select>
+        </div>
+        <label class="check-control">
+          <input id="holidayAsWeekend" type="checkbox" checked />
+          祝日は週末扱い
+        </label>
+      </section>
+
+      <nav id="analysisNav" class="analysis-nav" aria-label="分析メニュー">
+        <button type="button" class="analysis-tab active" data-view="month"><span class="tab-icon icon-month" aria-hidden="true"></span>月別詳細</button>
+        <button type="button" class="analysis-tab" data-view="overview"><span class="tab-icon icon-overview" aria-hidden="true"></span>一覧表示</button>
+        <button type="button" class="analysis-tab" data-view="sales"><span class="tab-icon icon-sales" aria-hidden="true"></span>売上推移</button>
+        <button type="button" class="analysis-tab" data-view="labor"><span class="tab-icon icon-cost" aria-hidden="true"></span>人件費/原価</button>
+        <button type="button" class="analysis-tab" data-view="drink"><span class="tab-icon icon-drink" aria-hidden="true"></span>ドリンク推移</button>
+        <button type="button" class="analysis-tab" data-view="lunchDinner"><span class="tab-icon icon-meal" aria-hidden="true"></span>ランチ/ディナー</button>
+        <button type="button" class="analysis-tab" data-view="weekday"><span class="tab-icon icon-weekday" aria-hidden="true"></span>曜日分析</button>
+        <button type="button" class="analysis-tab" data-view="profit"><span class="tab-icon icon-profit" aria-hidden="true"></span>利益・赤字</button>
+        <button type="button" class="analysis-tab" data-view="compare"><span class="tab-icon icon-compare" aria-hidden="true"></span>期間比較</button>
+        <button type="button" class="analysis-tab" data-view="campaign"><span class="tab-icon icon-campaign" aria-hidden="true"></span>キャンペーン</button>
+        <button type="button" class="analysis-tab" data-view="records"><span class="tab-icon icon-records" aria-hidden="true"></span>登録データ</button>
+      </nav>
+
+      <section class="view-panel active" data-view-panel="month">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Monthly Detail</p>
+              <h2 id="monthDetailTitle">月別詳細</h2>
+            </div>
+          </div>
+          <div id="monthDetailKpis" class="kpi-grid compact-kpi-grid"></div>
+        </article>
+        <div class="grid two">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+              <p class="eyebrow">YoY</p>
+                <h2>重要指標・昨対・前月比</h2>
+              </div>
+            </div>
+            <div id="monthDetailCompare" class="table-wrap"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Weekday</p>
+                <h2>曜日別の内訳</h2>
+              </div>
+            </div>
+            <div id="monthDetailWeekday" class="table-wrap"></div>
+          </article>
+        </div>
+        <div class="grid two">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+              <p class="eyebrow">Segment</p>
+                <h2>平日・週末・祝日</h2>
+              </div>
+            </div>
+            <div id="monthDetailSegments" class="table-wrap"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Cost</p>
+                <h2>経費の内訳</h2>
+              </div>
+            </div>
+            <div id="monthDetailExpenses" class="table-wrap"></div>
+          </article>
+        </div>
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Daily</p>
+              <h2>日別明細</h2>
+            </div>
+          </div>
+          <div id="monthDetailDaily" class="table-wrap"></div>
+        </article>
+      </section>
+
+      <section class="view-panel" data-view-panel="overview">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">All Months</p>
+              <h2>一覧表示</h2>
+            </div>
+          </div>
+          <div id="overviewTable" class="table-wrap"></div>
+        </article>
+      </section>
+
+      <section class="view-panel" data-view-panel="sales">
+        <div class="grid two">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Sales Trend</p>
+                <h2>上下マークで見る月別推移</h2>
+              </div>
+            </div>
+            <div id="monthlyChart" class="table-wrap"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Insight</p>
+                <h2>自動コメント</h2>
+              </div>
+            </div>
+            <div id="insights" class="insights"></div>
+          </article>
+        </div>
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Monthly Table</p>
+              <h2>月別一覧</h2>
+            </div>
+          </div>
+          <div id="monthlyTable" class="table-wrap"></div>
+        </article>
+      </section>
+
+      <section class="view-panel" data-view-panel="labor">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Labor / Cost</p>
+              <h2>人件費率・原価率の推移</h2>
+            </div>
+          </div>
+          <div id="laborChart" class="table-wrap"></div>
+        </article>
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Other Cost</p>
+              <h2>その他経費のざっくり構成</h2>
+            </div>
+          </div>
+          <div id="laborTable" class="table-wrap"></div>
+        </article>
+      </section>
+
+      <section class="view-panel" data-view-panel="drink">
+        <div class="grid two">
+          <article class="panel chart-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Drink</p>
+                <h2>ドリンク売上・ドリンク率</h2>
+              </div>
+            </div>
+            <div id="drinkChart" class="chart"></div>
+          </article>
+          <article class="panel">
+            <div id="drinkTable" class="table-wrap"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view-panel" data-view-panel="lunchDinner">
+        <article class="panel chart-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Lunch / Dinner</p>
+              <h2>ランチ・ディナー比較</h2>
+            </div>
+          </div>
+          <div id="lunchDinnerChart" class="chart"></div>
+        </article>
+        <article class="panel">
+          <div id="lunchDinnerTable" class="table-wrap"></div>
+        </article>
+      </section>
+
+      <section class="view-panel" data-view-panel="weekday">
+        <article class="panel chart-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Weekday</p>
+              <h2>曜日ごとの比較</h2>
+            </div>
+            <select id="weekdayMetricSelect" class="compact-select">
+              <option value="lunch">ランチ売上</option>
+              <option value="sales">総売上</option>
+              <option value="unit">客単価</option>
+              <option value="drinkRatio">ドリンク率</option>
+            </select>
+          </div>
+          <div id="weekdayChart" class="chart"></div>
+        </article>
+        <article class="panel">
+          <div id="weekdayTable" class="table-wrap"></div>
+        </article>
+      </section>
+
+      <section class="view-panel" data-view-panel="profit">
+        <article class="panel chart-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Profit</p>
+              <h2>利益・黒字月/赤字月</h2>
+            </div>
+          </div>
+          <div id="profitChart" class="chart"></div>
+        </article>
+        <article class="panel">
+          <div id="profitTable" class="table-wrap"></div>
+        </article>
+      </section>
+
+      <section class="view-panel" data-view-panel="compare">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Compare</p>
+              <h2>期間比較</h2>
+            </div>
+          </div>
+          <div class="period-controls">
+            <div>
+              <strong>期間A</strong>
+              <label>開始 <input id="periodAStart" type="month" /></label>
+              <label>終了 <input id="periodAEnd" type="month" /></label>
+            </div>
+            <div>
+              <strong>期間B</strong>
+              <label>開始 <input id="periodBStart" type="month" /></label>
+              <label>終了 <input id="periodBEnd" type="month" /></label>
+            </div>
+          </div>
+          <div id="periodCompare" class="table-wrap"></div>
+        </article>
+      </section>
+
+      <section class="view-panel" data-view-panel="campaign">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Campaign</p>
+              <h2>キャンペーン・出来事</h2>
+            </div>
+          </div>
+          <form id="eventForm" class="event-form">
+            <input id="eventName" type="text" placeholder="例: バレンタイン限定ドリンク" required />
+            <select id="eventType">
+              <option>キャンペーン</option>
+              <option>広告</option>
+              <option>新メニュー</option>
+              <option>値上げ</option>
+              <option>休業</option>
+              <option>その他</option>
+            </select>
+            <input id="eventStart" type="date" required />
+            <input id="eventEnd" type="date" required />
+            <input id="eventMemo" type="text" placeholder="メモ" />
+            <button class="primary-button" type="submit">追加</button>
+          </form>
+          <div id="eventImpact" class="table-wrap"></div>
+        </article>
+      </section>
+
+      <section class="view-panel" data-view-panel="records">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Files</p>
+              <h2>登録済みデータ</h2>
+            </div>
+          </div>
+          <div id="fileList" class="file-list"></div>
+        </article>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
