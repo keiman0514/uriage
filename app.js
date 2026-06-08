@@ -1,4 +1,4 @@
-const APP_ASSET_VERSION = "20260608-yoy-6";
+const APP_ASSET_VERSION = "20260608-cost-profit-7";
 const APP_BASE_URL = new URL(".", document.currentScript?.src || location.href).href;
 let pdfjsLib = globalThis.pdfjsLib || null;
 if (pdfjsLib?.getDocument) {
@@ -663,7 +663,7 @@ function renderOverviewTable(allMonthlyRows) {
         percent(costRatio),
         markerPoint(diffNumber(costRatio, previousMonthCostRatio), true),
         markerPoint(diffNumber(costRatio, previousYearCostRatio), true),
-        yen(item.profit),
+        profitYen(item.profit),
         markerYen(diffNumber(item.profit, previousMonth?.profit)),
         markerYen(diffNumber(item.profit, previousYear?.profit)),
       ];
@@ -700,7 +700,7 @@ function renderMonthDetail(monthly) {
     ["ドリンク率", hasDailyExcel ? percent(item.drinkRatio) : "-", hasDailyExcel ? `ドリンク ${yen(item.drink)}` : "営業日報Excel未登録", hasDailyExcel ? "" : "warn"],
     ["人件費率", percent(currentMetrics.laborRatio), `人件費 ${yen(item.laborCost)}`, ""],
     ["原価率", percent(currentMetrics.costRatio), `原価 ${yen(item.cost)}`, ""],
-    ["利益", yen(item.profit), item.profit === null ? "PDF未登録" : item.profit >= 0 ? "黒字" : "赤字", item.profit === null ? "warn" : item.profit >= 0 ? "good" : "bad"],
+    ["利益", profitYen(item.profit), item.profit === null ? "PDF未登録" : item.profit >= 0 ? "黒字" : "赤字", item.profit === null ? "warn" : item.profit >= 0 ? "good" : "bad"],
   ]
     .map(
       ([label, value, sub, className]) => `
@@ -892,8 +892,8 @@ function renderMonthlyChart(monthly) {
         yen(item.unit),
         marker(item.yoy.unit),
         percent(item.drinkRatio),
-        yen(item.profit),
-        item.profit === null ? "-" : item.profit >= 0 ? '<span class="pill">黒字</span>' : '<span class="pill danger-pill">赤字</span>',
+        profitYen(item.profit),
+        profitBadge(item.profit),
       ]),
   );
 }
@@ -927,7 +927,7 @@ function renderLaborView(monthly) {
         percent(costRatio),
         markerPoint(diffNumber(costRatio, priorCostRatio), true),
         markerPoint(diffNumber(costRatio, prevMonthCostRatio), true),
-        yen(item.profit),
+        profitYen(item.profit),
       ];
     }),
   );
@@ -1083,8 +1083,8 @@ function renderProfitView(monthly) {
       .reverse()
       .map((item) => [
         item.label,
-        item.profit === null ? "-" : item.profit >= 0 ? '<span class="pill">黒字</span>' : '<span class="pill danger-pill">赤字</span>',
-        yen(item.profit),
+        profitBadge(item.profit),
+        profitYen(item.profit),
         percent(div(item.profit, item.sales)),
         yen(item.sales),
         yen(item.cost),
@@ -1304,8 +1304,8 @@ function renderMonthlyTable(monthly) {
       yen(item.lunch),
       yen(item.drink),
       percent(item.drinkRatio),
-      yen(item.profit),
-      item.profit === null ? "-" : item.profit >= 0 ? "黒字" : "赤字",
+      profitYen(item.profit),
+      profitBadge(item.profit),
       signedPct(item.yoy.sales),
       signedPct(item.yoy.customers),
       signedPct(item.yoy.unit),
@@ -1740,31 +1740,41 @@ function signedPct(value) {
 
 function marker(value, prefix = "", invert = false) {
   if (!Number.isFinite(value)) return "-";
-  const symbol = value > 0 ? "▲" : value < 0 ? "▼" : "→";
   const favorable = invert ? value < 0 : value > 0;
   const unfavorable = invert ? value > 0 : value < 0;
   const className = favorable ? "trend-up" : unfavorable ? "trend-down" : "trend-flat";
+  const symbol = favorable ? "▲" : unfavorable ? "▼" : "→";
   const label = `${prefix ? `${prefix} ` : ""}${symbol} ${signedPct(value)}`;
   return `<span class="trend-marker ${className}">${label}</span>`;
 }
 
 function markerPoint(value, invert = false) {
   if (!Number.isFinite(value)) return "-";
-  const symbol = value > 0 ? "▲" : value < 0 ? "▼" : "→";
   const favorable = invert ? value < 0 : value > 0;
   const unfavorable = invert ? value > 0 : value < 0;
   const className = favorable ? "trend-up" : unfavorable ? "trend-down" : "trend-flat";
+  const symbol = favorable ? "▲" : unfavorable ? "▼" : "→";
   return `<span class="trend-marker ${className}">${symbol} ${signedPoint(value)}</span>`;
 }
 
 function markerYen(value, invert = false) {
   if (!Number.isFinite(value)) return "-";
-  const symbol = value > 0 ? "▲" : value < 0 ? "▼" : "→";
   const favorable = invert ? value < 0 : value > 0;
   const unfavorable = invert ? value > 0 : value < 0;
   const className = favorable ? "trend-up" : unfavorable ? "trend-down" : "trend-flat";
+  const symbol = favorable ? "▲" : unfavorable ? "▼" : "→";
   const sign = value > 0 ? "+" : "";
   return `<span class="trend-marker ${className}">${symbol} ${sign}${yen(value)}</span>`;
+}
+
+function profitYen(value) {
+  const textValue = yen(value);
+  return Number.isFinite(value) && value < 0 ? `<span class="bad">${textValue}</span>` : textValue;
+}
+
+function profitBadge(value) {
+  if (!Number.isFinite(value)) return "-";
+  return value >= 0 ? '<span class="pill">黒字</span>' : '<span class="pill danger-pill">赤字</span>';
 }
 
 function signedPoint(value) {
