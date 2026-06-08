@@ -1,6 +1,7 @@
-import * as pdfjsLib from "./vendor/pdf.min.mjs";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.mjs";
+const pdfjsLib = globalThis.pdfjsLib || null;
+if (pdfjsLib?.GlobalWorkerOptions) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.mjs";
+}
 
 const STORAGE_KEY = "nishiogi-sales-dashboard-v1";
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
@@ -316,7 +317,10 @@ async function parseFinancialPdf(file) {
   }
   const monthInfo = parseMonthFromName(file.name, "pdf");
   const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const pdf = await pdfjsLib.getDocument({
+    data: arrayBuffer,
+    disableWorker: location.protocol === "file:",
+  }).promise;
   const lines = [];
 
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
@@ -595,8 +599,8 @@ function renderMonthOptions(monthly) {
   activeMonthKey = nextKey;
 }
 
-function renderOverviewTable(monthly) {
-  const rows = monthly
+function renderOverviewTable(allMonthlyRows) {
+  const rows = allMonthlyRows
     .filter((item) => item.sales || item.laborCost || item.cost || item.profit !== null)
     .slice()
     .sort((a, b) => a.key.localeCompare(b.key));
@@ -608,8 +612,8 @@ function renderOverviewTable(monthly) {
   els.overviewTable.innerHTML = table(
     ["月", "売上", "前月比", "昨対", "人件費", "人件費率", "前月比", "昨対", "原価", "原価率", "前月比", "昨対", "利益", "前月差", "昨年差"],
     rows.map((item) => {
-      const previousMonth = monthly.find((target) => target.key === previousMonthKey(item.key));
-      const previousYear = monthly.find((target) => target.year === item.year - 1 && target.month === item.month);
+      const previousMonth = allMonthlyRows.find((target) => target.key === previousMonthKey(item.key));
+      const previousYear = allMonthlyRows.find((target) => target.year === item.year - 1 && target.month === item.month);
       const laborRatio = div(item.laborCost, item.sales);
       const previousMonthLaborRatio = div(previousMonth?.laborCost, previousMonth?.sales);
       const previousYearLaborRatio = div(previousYear?.laborCost, previousYear?.sales);
