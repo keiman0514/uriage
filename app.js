@@ -1,4 +1,4 @@
-const APP_ASSET_VERSION = "20260610-sticky-tables-12";
+const APP_ASSET_VERSION = "20260610-mobile-cards-13";
 const APP_BASE_URL = new URL(".", document.currentScript?.src || location.href).href;
 let pdfjsLib = globalThis.pdfjsLib || null;
 if (pdfjsLib?.getDocument) {
@@ -1698,7 +1698,7 @@ function table(headers, rows) {
       <tbody>${rows
         .map(
           (row) => `
-            <tr>${row.map((cell, index) => `<td class="${index === 0 ? "text" : ""}">${cell ?? "-"}</td>`).join("")}</tr>
+            <tr>${row.map((cell, index) => `<td class="${index === 0 ? "text" : ""}" data-label="${escapeHtml(headers[index] || "")}">${cell ?? "-"}</td>`).join("")}</tr>
           `,
         )
         .join("")}</tbody>
