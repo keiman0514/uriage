@@ -1,4 +1,4 @@
-const APP_ASSET_VERSION = "20260609-diagnosis-9";
+const APP_ASSET_VERSION = "20260609-flex-month-11";
 const APP_BASE_URL = new URL(".", document.currentScript?.src || location.href).href;
 let pdfjsLib = globalThis.pdfjsLib || null;
 if (pdfjsLib?.getDocument) {
@@ -406,15 +406,33 @@ function configurePdfJs(pdfModule) {
   }
 }
 
-function parseMonthFromName(name, type) {
-  const japanese = name.match(/(20\d{2})年(\d{1,2})月/);
-  if (japanese) {
-    return { year: Number(japanese[1]), month: Number(japanese[2]) };
-  }
+function normalizeFileNameForMonth(value) {
+  return String(value)
+    .normalize("NFKC")
+    .replace(/[０-９]/g, (char) => String(char.charCodeAt(0) - 0xff10))
+    .replace(/[．。]/g, ".")
+    .replace(/[／]/g, "/")
+    .replace(/[＿]/g, "_")
+    .replace(/[‐‑‒–—―－ー−]/g, "-")
+    .replace(/[　]/g, " ");
+}
 
-  const compact = name.match(/(20\d{2})(0[1-9]|1[0-2])/);
-  if (compact) {
-    return { year: Number(compact[1]), month: Number(compact[2]) };
+function parseMonthFromName(name, type) {
+  const normalized = normalizeFileNameForMonth(name);
+  const patterns = [
+    /(20\d{2})\s*年\s*(?:度\s*)?(\d{1,2})\s*月/,
+    /(20\d{2})\s*[._\-\/\s]\s*(\d{1,2})(?!\d)/,
+    /(20\d{2})\D{1,20}(0?[1-9]|1[0-2])(?=\D|$)/,
+    /(20\d{2})(0[1-9]|1[0-2])/,
+    /(20\d{2})([1-9])(?=\D|$)/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (!match) continue;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    if (month >= 1 && month <= 12) return { year, month };
   }
 
   throw new Error(`${type === "pdf" ? "PDF" : "Excel"}のファイル名から年月を読めません`);
