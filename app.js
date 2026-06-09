@@ -1,4 +1,4 @@
-const APP_ASSET_VERSION = "20260609-weekday-8";
+const APP_ASSET_VERSION = "20260609-diagnosis-9";
 const APP_BASE_URL = new URL(".", document.currentScript?.src || location.href).href;
 let pdfjsLib = globalThis.pdfjsLib || null;
 if (pdfjsLib?.getDocument) {
@@ -42,6 +42,7 @@ const els = {
   monthlyChart: document.querySelector("#monthlyChart"),
   monthDetailTitle: document.querySelector("#monthDetailTitle"),
   monthDetailKpis: document.querySelector("#monthDetailKpis"),
+  monthDiagnosis: document.querySelector("#monthDiagnosis"),
   monthDetailCompare: document.querySelector("#monthDetailCompare"),
   monthDetailWeekday: document.querySelector("#monthDetailWeekday"),
   monthDetailSegments: document.querySelector("#monthDetailSegments"),
@@ -677,6 +678,7 @@ function renderMonthDetail(monthly) {
   if (!item) {
     els.monthDetailTitle.textContent = "月別詳細";
     els.monthDetailKpis.innerHTML = empty("対象月を選んでください。");
+    els.monthDiagnosis.innerHTML = empty("対象月を選ぶと、具体的な打ち手が表示されます。");
     els.monthDetailCompare.innerHTML = empty("対象月のデータがありません。");
     els.monthDetailWeekday.innerHTML = empty("対象月のデータがありません。");
     els.monthDetailSegments.innerHTML = empty("対象月のデータがありません。");
@@ -712,6 +714,8 @@ function renderMonthDetail(monthly) {
       `,
     )
     .join("");
+
+  renderMonthDiagnosis(item, rows, previous, previousMonth);
 
   els.monthDetailCompare.innerHTML = table(
     ["指標", `${item.year}年${item.month}月`, "前年比", "前月比"],
@@ -869,6 +873,203 @@ function renderMonthExpenseBreakdown(item) {
       memo ? `<span class="pill">${memo}</span>` : "",
     ]),
   );
+}
+
+function renderMonthDiagnosis(item, rows, previousYear, previousMonth) {
+  const diagnosis = buildMonthDiagnosis(item, rows, previousYear, previousMonth);
+  els.monthDiagnosis.innerHTML = `
+    <div class="diagnosis-summary ${diagnosis.status}">
+      <div>
+        <p class="eyebrow">Priority</p>
+        <h3>${escapeHtml(diagnosis.title)}</h3>
+        <p>${escapeHtml(diagnosis.summary)}</p>
+      </div>
+      <span class="diagnosis-status">${escapeHtml(diagnosis.badge)}</span>
+    </div>
+    <div class="diagnosis-grid">
+      ${diagnosis.cards
+        .map(
+          (card) => `
+            <article class="diagnosis-card ${card.status}">
+              <p class="diagnosis-card-label">${escapeHtml(card.label)}</p>
+              <h4>${escapeHtml(card.title)}</h4>
+              <p>${escapeHtml(card.reason)}</p>
+              <strong>${escapeHtml(card.todo)}</strong>
+            </article>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function buildMonthDiagnosis(item, rows, previousYear, previousMonth) {
+  const cards = [];
+  const comparison = previousYear || previousMonth;
+  const comparisonRows = comparison ? state.daily.filter((row) => row.key === comparison.key) : [];
+  const comparisonLabel = previousYear ? "前年同月" : previousMonth ? "前月" : "比較月";
+  const currentAgg = aggregateDaily(rows);
+  const comparisonAgg = aggregateDaily(comparisonRows);
+  const salesChange = pctChange(item.sales, comparison?.sales);
+  const profitDiff = diffNumber(item.profit, comparison?.profit);
+  const laborPoint = diffNumber(div(item.laborCost, item.sales), div(comparison?.laborCost, comparison?.sales));
+  const costPoint = diffNumber(div(item.cost, item.sales), div(comparison?.cost, comparison?.sales));
+  const drinkPoint = diffNumber(item.drinkRatio, comparison?.drinkRatio);
+  const addCard = (priority, status, label, title, reason, todo) => {
+    cards.push({ priority, status, label, title, reason, todo });
+  };
+
+  if (Number.isFinite(item.profit) && item.profit < 0) {
+    addCard(
+      100,
+      "bad",
+      "最優先",
+      "赤字を止める",
+      `利益が${yen(item.profit)}です。まず利益が残らない原因を経費率から切り分けます。`,
+      "原価率、人件費率、その他経費を売上比で確認し、発注量・ロス・ピーク外シフトを1週間単位で締める。",
+    );
+  } else if (Number.isFinite(profitDiff) && profitDiff < -100000) {
+    addCard(
+      82,
+      "warn",
+      "利益注意",
+      "黒字でも利益の減り方を見る",
+      `${comparisonLabel}より利益が${yen(Math.abs(profitDiff))}減っています。売上だけでなく経費率の悪化も確認したい月です。`,
+      "前年差が大きい順に、人件費率・原価率・その他経費を見て、利益を削った項目から対策する。",
+    );
+  }
+
+  if (Number.isFinite(salesChange) && salesChange < -0.03) {
+    const customerChange = pctChange(currentAgg.customers, comparisonAgg.customers);
+    const currentUnit = div(currentAgg.sales, currentAgg.customers);
+    const comparisonUnit = div(comparisonAgg.sales, comparisonAgg.customers);
+    const unitChange = pctChange(currentUnit, comparisonUnit);
+    if (Number.isFinite(customerChange) && customerChange < -0.03) {
+      addCard(
+        76,
+        "bad",
+        "売上原因",
+        "客数回復を優先する",
+        `売上が${signedPct(salesChange)}、客数が${signedPct(customerChange)}です。来店数の落ち込みが売上を押し下げています。`,
+        "落ち込みが大きい曜日に、予約導線・SNS告知・限定メニュー・近隣向け再来店施策を集中させる。",
+      );
+    }
+    if (Number.isFinite(unitChange) && unitChange < -0.03) {
+      addCard(
+        72,
+        "warn",
+        "単価原因",
+        "客単価を底上げする",
+        `客単価が${signedPct(unitChange)}です。人が来ていても、追加注文や高単価商品の入り方が弱い可能性があります。`,
+        "おすすめドリンク、追加一品、セット提案をスタッフ共通の声かけにして、会計単価を上げる。",
+      );
+    }
+    if (!rows.length) {
+      addCard(
+        68,
+        "warn",
+        "売上原因",
+        "営業日報Excelを追加して原因を分ける",
+        `売上が${signedPct(salesChange)}ですが、この月は客数・客単価・曜日の内訳が未登録です。`,
+        "この月の営業日報Excelを入れて、客数減なのか単価減なのかを分けて確認する。",
+      );
+    }
+  }
+
+  if (Number.isFinite(laborPoint) && laborPoint > 0.01) {
+    addCard(
+      70,
+      "bad",
+      "人件費",
+      "人件費率を締める",
+      `人件費率が${signedPoint(laborPoint)}悪化しています。売上に対して人件費が重くなっています。`,
+      "曜日別の1日平均売上を見て、弱い曜日の入り時間・上がり時間・仕込み人数を調整する。",
+    );
+  }
+
+  if (Number.isFinite(costPoint) && costPoint > 0.01) {
+    addCard(
+      68,
+      "bad",
+      "原価",
+      "原価率を先に締める",
+      `原価率が${signedPoint(costPoint)}悪化しています。売上増よりも粗利が残りにくい状態です。`,
+      "高原価メニュー、廃棄、仕込み過多、発注単位を確認し、売れ筋以外のロスを減らす。",
+    );
+  }
+
+  if (rows.length && comparisonRows.length) {
+    const lunchChange = pctChange(div(currentAgg.lunch, currentAgg.days), div(comparisonAgg.lunch, comparisonAgg.days));
+    const dinnerChange = pctChange(div(currentAgg.dinner, currentAgg.days), div(comparisonAgg.dinner, comparisonAgg.days));
+    const weakDinner = weakestWeekday(rows, comparisonRows, "dinner");
+    const weakLunch = weakestWeekday(rows, comparisonRows, "lunch");
+    if (Number.isFinite(dinnerChange) && dinnerChange < -0.05 && (!Number.isFinite(lunchChange) || dinnerChange < lunchChange)) {
+      addCard(
+        62,
+        "warn",
+        "時間帯",
+        "ディナー平均を戻す",
+        `ディナー平均が${signedPct(dinnerChange)}です。ランチよりディナー側の落ち込みが大きく見えます。`,
+        `${weakDinner ? `${weakDinner.label}曜` : "弱い曜日"}に、ドリンク・追加一品・滞在単価を上げる提案を集中する。`,
+      );
+    } else if (Number.isFinite(lunchChange) && lunchChange < -0.05) {
+      addCard(
+        58,
+        "warn",
+        "時間帯",
+        "ランチ平均を戻す",
+        `ランチ平均が${signedPct(lunchChange)}です。昼の客数か単価が弱くなっています。`,
+        `${weakLunch ? `${weakLunch.label}曜` : "弱い曜日"}のランチ内容、提供速度、セット訴求を見直す。`,
+      );
+    }
+  }
+
+  if (Number.isFinite(drinkPoint) && drinkPoint < -0.01) {
+    addCard(
+      54,
+      "warn",
+      "ドリンク",
+      "ドリンク率を戻す",
+      `ドリンク率が${signedPoint(drinkPoint)}下がっています。利益に効きやすい追加注文が弱い可能性があります。`,
+      "最初の一杯、食後、追加注文の声かけを決めて、曜日別にドリンク率を追う。",
+    );
+  }
+
+  if (!cards.length) {
+    addCard(
+      20,
+      "good",
+      "維持",
+      "大きな異常は少ない",
+      "売上・利益・経費率に強い悪化サインは少なめです。",
+      "良かった曜日とメニューを残し、次月も同じ条件で再現できるかを見る。",
+    );
+  }
+
+  const sorted = cards.sort((a, b) => b.priority - a.priority).slice(0, 4);
+  const top = sorted[0];
+  const status = top.status === "bad" ? "bad" : top.status === "warn" ? "warn" : "good";
+  const title = status === "bad" ? "今月は改善優先" : status === "warn" ? "注意して見る月" : "良い流れを維持";
+  const badge = status === "bad" ? "優先度 高" : status === "warn" ? "優先度 中" : "優先度 低";
+  const summary =
+    status === "good"
+      ? `${item.label}は大きな悪化サインが少ないので、良かった条件を再現する月です。`
+      : `${item.label}は「${top.title}」から見ると判断しやすいです。`;
+  return { status, title, badge, summary, cards: sorted };
+}
+
+function weakestWeekday(rows, comparisonRows, metric) {
+  const grouped = groupBy(rows, (row) => row.weekday);
+  const previousGrouped = groupBy(comparisonRows, (row) => row.weekday);
+  const values = WEEKDAY_ORDER.map((weekday) => {
+    const current = aggregateDaily(grouped.get(weekday) || []);
+    const previous = aggregateDaily(previousGrouped.get(weekday) || []);
+    const currentAverage = div(current[metric], current.days);
+    const previousAverage = div(previous[metric], previous.days);
+    return { label: weekday, change: pctChange(currentAverage, previousAverage) };
+  }).filter((weekday) => Number.isFinite(weekday.change));
+  if (!values.length) return null;
+  return minBy(values, (weekday) => weekday.change);
 }
 
 function renderMonthlyChart(monthly) {

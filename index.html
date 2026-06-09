@@ -6,7 +6,7 @@
     <title>店舗売上データベース</title>
     <link rel="stylesheet" href="./styles.css" />
     <script src="./vendor/jszip.min.js"></script>
-    <script src="./vendor/pdf.browser.js?v=20260609-weekday-8"></script>
+    <script src="./vendor/pdf.browser.js?v=20260609-diagnosis-9"></script>
   </head>
   <body>
     <header class="app-header">
@@ -90,6 +90,15 @@
             </div>
           </div>
           <div id="monthDetailKpis" class="kpi-grid compact-kpi-grid"></div>
+        </article>
+        <article class="panel diagnosis-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Action Diagnosis</p>
+              <h2>今月の診断と打ち手</h2>
+            </div>
+          </div>
+          <div id="monthDiagnosis" class="diagnosis-wrap"></div>
         </article>
         <div class="grid two">
           <article class="panel">
@@ -340,6 +349,6 @@
       </section>
     </main>
 
-    <script src="./app.js?v=20260609-weekday-8"></script>
+    <script src="./app.js?v=20260609-diagnosis-9"></script>
   </body>
 </html>

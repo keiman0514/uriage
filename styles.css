@@ -835,6 +835,121 @@ tr:hover td {
   color: var(--muted);
 }
 
+.diagnosis-wrap {
+  display: grid;
+  gap: 14px;
+}
+
+.diagnosis-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f6fbf8;
+}
+
+.diagnosis-summary h3 {
+  margin: 2px 0 6px;
+  color: var(--ink);
+  font-size: 1.12rem;
+  font-weight: 950;
+}
+
+.diagnosis-summary p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.diagnosis-summary.bad {
+  border-color: rgba(179, 38, 30, 0.22);
+  background: #fff7f5;
+}
+
+.diagnosis-summary.warn {
+  border-color: rgba(164, 96, 0, 0.24);
+  background: #fffaf0;
+}
+
+.diagnosis-summary.good {
+  border-color: rgba(19, 122, 69, 0.2);
+}
+
+.diagnosis-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 0.84rem;
+  font-weight: 950;
+  box-shadow: var(--shadow-soft);
+  white-space: nowrap;
+}
+
+.diagnosis-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.diagnosis-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-top: 4px solid var(--accent);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.diagnosis-card.bad {
+  border-top-color: var(--bad);
+}
+
+.diagnosis-card.warn {
+  border-top-color: var(--warn);
+}
+
+.diagnosis-card.good {
+  border-top-color: var(--good);
+}
+
+.diagnosis-card-label {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.diagnosis-card h4 {
+  margin: 0 0 8px;
+  color: var(--ink);
+  font-size: 0.98rem;
+  font-weight: 950;
+}
+
+.diagnosis-card p,
+.diagnosis-card strong {
+  display: block;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.diagnosis-card strong {
+  margin-top: 10px;
+  color: var(--ink);
+}
+
 .insights {
   display: grid;
   gap: 10px;
@@ -893,6 +1008,10 @@ tr:hover td {
     grid-template-columns: repeat(3, minmax(160px, 1fr));
   }
 
+  .diagnosis-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .grid.two {
     grid-template-columns: 1fr;
   }
@@ -939,6 +1058,15 @@ tr:hover td {
 
   .kpi-grid {
     grid-template-columns: 1fr;
+  }
+
+  .diagnosis-summary,
+  .diagnosis-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .diagnosis-status {
+    justify-self: start;
   }
 
   .period-controls,
