@@ -1,4 +1,4 @@
-const APP_ASSET_VERSION = "20260608-cost-profit-7";
+const APP_ASSET_VERSION = "20260609-weekday-8";
 const APP_BASE_URL = new URL(".", document.currentScript?.src || location.href).href;
 let pdfjsLib = globalThis.pdfjsLib || null;
 if (pdfjsLib?.getDocument) {
@@ -739,18 +739,17 @@ function renderMonthDetail(monthly) {
 
   const weekdayGrouped = groupBy(rows, (row) => row.weekday);
   els.monthDetailWeekday.innerHTML = table(
-    ["曜日", "日数", "売上", "1日平均", "客数", "平均客数", "客単価", "ランチ", "ドリンク率"],
+    ["曜日", "日数", "1日平均売上", "ランチ平均", "ディナー平均", "平均客数", "客単価", "ドリンク率"],
     WEEKDAY_ORDER.map((weekday) => {
       const agg = aggregateDaily(weekdayGrouped.get(weekday) || []);
       return [
         weekday,
         integer(agg.days),
-        yen(agg.sales),
         yen(div(agg.sales, agg.days)),
-        `${integer(agg.customers)}人`,
+        yen(div(agg.lunch, agg.days)),
+        yen(div(agg.dinner, agg.days)),
         `${integer(div(agg.customers, agg.days))}人`,
         yen(div(agg.sales, agg.customers)),
-        yen(agg.lunch),
         percent(div(agg.drink, agg.sales)),
       ];
     }),
@@ -763,18 +762,17 @@ function renderMonthDetail(monthly) {
     ["金土日", rows.filter((row) => ["金", "土", "日"].includes(row.weekday))],
   ];
   els.monthDetailSegments.innerHTML = table(
-    ["区分", "日数", "売上", "1日平均", "客数", "平均客数", "客単価", "ランチ", "ドリンク率"],
+    ["区分", "日数", "1日平均売上", "ランチ平均", "ディナー平均", "平均客数", "客単価", "ドリンク率"],
     segmentRows.map(([label, segment]) => {
       const agg = aggregateDaily(segment);
       return [
         label,
         integer(agg.days),
-        yen(agg.sales),
         yen(div(agg.sales, agg.days)),
-        `${integer(agg.customers)}人`,
+        yen(div(agg.lunch, agg.days)),
+        yen(div(agg.dinner, agg.days)),
         `${integer(div(agg.customers, agg.days))}人`,
         yen(div(agg.sales, agg.customers)),
-        yen(agg.lunch),
         percent(div(agg.drink, agg.sales)),
       ];
     }),
@@ -1040,7 +1038,7 @@ function renderWeekdayTable() {
   const metric = els.weekdayMetricSelect.value;
   const current = weekdayMetricRows(state.daily.filter((row) => row.year === year), metric);
   const previous = weekdayMetricRows(state.daily.filter((row) => row.year === year - 1), metric);
-  const type = metric === "drinkRatio" ? "ratio" : metric === "unit" || metric === "sales" || metric === "lunch" ? "yen" : "count";
+  const type = metric === "drinkRatio" ? "ratio" : metric === "unit" || metric === "sales" || metric === "lunch" || metric === "dinner" ? "yen" : "count";
   els.weekdayTable.innerHTML = table(
     ["曜日", `${year}年`, `${year - 1}年`, "前年差", "日数", "祝日"],
     current.map((item, index) => {
@@ -1111,6 +1109,10 @@ function weekdayMetricRows(rows, metric) {
             ? agg.customers
               ? agg.sales / agg.customers
               : null
+            : metric === "dinner"
+              ? agg.days
+                ? agg.dinner / agg.days
+                : null
             : agg.sales
               ? agg.drink / agg.sales
               : null;
@@ -1455,7 +1457,7 @@ function metricValue(item, metric) {
 
 function axisFormatter(metric) {
   if (metric === "customers" || metric === "count") return (value) => `${Math.round(value).toLocaleString("ja-JP")}人`;
-  if (metric === "unit" || metric === "sales" || metric === "drink" || metric === "profit" || metric === "lunch") return compactYen;
+  if (metric === "unit" || metric === "sales" || metric === "drink" || metric === "profit" || metric === "lunch" || metric === "dinner") return compactYen;
   if (metric === "ratio") return (value) => percent(value);
   return compactNumber;
 }

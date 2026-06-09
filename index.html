@@ -6,7 +6,7 @@
     <title>店舗売上データベース</title>
     <link rel="stylesheet" href="./styles.css" />
     <script src="./vendor/jszip.min.js"></script>
-    <script src="./vendor/pdf.browser.js?v=20260608-cost-profit-7"></script>
+    <script src="./vendor/pdf.browser.js?v=20260609-weekday-8"></script>
   </head>
   <body>
     <header class="app-header">
@@ -247,8 +247,9 @@
               <h2>曜日ごとの比較</h2>
             </div>
             <select id="weekdayMetricSelect" class="compact-select">
-              <option value="lunch">ランチ売上</option>
-              <option value="sales">総売上</option>
+              <option value="sales">1日平均売上</option>
+              <option value="lunch">ランチ平均</option>
+              <option value="dinner">ディナー平均</option>
               <option value="unit">客単価</option>
               <option value="drinkRatio">ドリンク率</option>
             </select>
@@ -339,6 +340,6 @@
       </section>
     </main>
 
-    <script src="./app.js?v=20260608-cost-profit-7"></script>
+    <script src="./app.js?v=20260609-weekday-8"></script>
   </body>
 </html>
