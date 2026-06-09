@@ -741,8 +741,7 @@ input[type="text"] {
 }
 
 .table-wrap {
-  max-height: min(68vh, 620px);
-  overflow: auto;
+  overflow-x: auto;
   position: relative;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -817,6 +816,55 @@ tbody tr:nth-child(even) td {
 
 tr:hover td {
   background: #f0f7f5;
+}
+
+.floating-table-head {
+  position: fixed;
+  z-index: 30;
+  display: none;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px 8px 0 0;
+  background: #edf5f2;
+  box-shadow: var(--shadow-soft);
+  pointer-events: none;
+}
+
+.floating-table-head.visible {
+  display: block;
+}
+
+.floating-table-window {
+  overflow: hidden;
+}
+
+.floating-table-head table {
+  min-width: 720px;
+  table-layout: fixed;
+}
+
+.floating-table-head th {
+  border-bottom: 0;
+}
+
+.floating-table-head th:first-child {
+  position: static;
+  box-shadow: none;
+}
+
+.floating-table-corner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  padding: 10px 11px;
+  background: #edf5f2;
+  color: var(--ink-soft);
+  box-shadow: 1px 0 0 var(--line);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-align: left;
 }
 
 .pill {

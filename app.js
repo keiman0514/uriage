@@ -1,4 +1,4 @@
-const APP_ASSET_VERSION = "20260609-flex-month-11";
+const APP_ASSET_VERSION = "20260610-sticky-tables-12";
 const APP_BASE_URL = new URL(".", document.currentScript?.src || location.href).href;
 let pdfjsLib = globalThis.pdfjsLib || null;
 if (pdfjsLib?.getDocument) {
@@ -14,6 +14,8 @@ const PDF_SECTION_SPLIT_PATTERN = /(?=売\s*上\s*Ａ|月\s*内\s*仕\s*入|原\
 let usedEmbeddedSample = false;
 let activeMonthKey = "";
 let pendingMonthYear = null;
+let floatingTable = null;
+let floatingTableFrame = 0;
 const state = loadState();
 if (!state.daily.length && !state.financials.length && window.SALES_DASHBOARD_SAMPLE?.daily?.length) {
   state.daily = window.SALES_DASHBOARD_SAMPLE.daily || [];
@@ -136,6 +138,12 @@ function wireEvents() {
     setActiveView(button.dataset.view);
   });
 
+  window.addEventListener("scroll", requestFloatingTableUpdate, { passive: true });
+  window.addEventListener("resize", requestFloatingTableUpdate, { passive: true });
+  document.addEventListener("scroll", (event) => {
+    if (event.target?.classList?.contains("table-wrap")) requestFloatingTableUpdate();
+  }, true);
+
   els.yearSelect.addEventListener("change", () => {
     pendingMonthYear = Number(els.yearSelect.value);
     activeMonthKey = "";
@@ -194,6 +202,7 @@ function setActiveView(viewName) {
   els.viewPanels.forEach((panel) => {
     panel.classList.toggle("active", panel.dataset.viewPanel === viewName);
   });
+  requestFloatingTableUpdate();
 }
 
 async function handleFiles(files) {
@@ -530,6 +539,7 @@ function renderAll() {
   renderInsights(monthly);
   renderFileList();
   renderMonthlyTable(monthly);
+  requestFloatingTableUpdate();
 }
 
 function buildMonthly() {
@@ -1694,6 +1704,108 @@ function table(headers, rows) {
         .join("")}</tbody>
     </table>
   `;
+}
+
+function requestFloatingTableUpdate() {
+  if (floatingTableFrame) cancelAnimationFrame(floatingTableFrame);
+  floatingTableFrame = requestAnimationFrame(updateFloatingTableHeader);
+}
+
+function ensureFloatingTable() {
+  if (floatingTable) return floatingTable;
+  const root = document.createElement("div");
+  root.className = "floating-table-head";
+  root.innerHTML = `
+    <div class="floating-table-window">
+      <table></table>
+    </div>
+    <div class="floating-table-corner"></div>
+  `;
+  document.body.appendChild(root);
+  floatingTable = {
+    root,
+    window: root.querySelector(".floating-table-window"),
+    table: root.querySelector("table"),
+    corner: root.querySelector(".floating-table-corner"),
+    source: null,
+  };
+  return floatingTable;
+}
+
+function hideFloatingTable() {
+  if (!floatingTable) return;
+  floatingTable.root.classList.remove("visible");
+  floatingTable.source = null;
+}
+
+function getFloatingTableTop() {
+  const navRect = els.analysisNav?.getBoundingClientRect();
+  if (navRect && navRect.top <= 1 && navRect.bottom > 0) return Math.ceil(navRect.bottom + 6);
+  return 0;
+}
+
+function findFloatingTableSource(top) {
+  const wrappers = [...document.querySelectorAll(".view-panel.active .table-wrap")];
+  for (const wrapper of wrappers) {
+    const tableElement = wrapper.querySelector("table");
+    const head = tableElement?.tHead;
+    if (!tableElement || !head) continue;
+    const rect = wrapper.getBoundingClientRect();
+    const headHeight = head.getBoundingClientRect().height || 36;
+    if (rect.top < top && rect.bottom > top + headHeight + 8) {
+      return { wrapper, tableElement, head, rect, headHeight };
+    }
+  }
+  return null;
+}
+
+function updateFloatingTableHeader() {
+  floatingTableFrame = 0;
+  const top = getFloatingTableTop();
+  const source = findFloatingTableSource(top);
+  if (!source) {
+    hideFloatingTable();
+    return;
+  }
+
+  const view = ensureFloatingTable();
+  const tableRect = source.tableElement.getBoundingClientRect();
+  const visibleLeft = Math.max(source.rect.left, 0);
+  const visibleRight = Math.min(source.rect.right, window.innerWidth);
+  const visibleWidth = Math.max(0, visibleRight - visibleLeft);
+  if (!visibleWidth) {
+    hideFloatingTable();
+    return;
+  }
+
+  if (view.source !== source.tableElement) {
+    view.table.innerHTML = "";
+    view.table.appendChild(source.head.cloneNode(true));
+    view.source = source.tableElement;
+  }
+
+  const originalCells = [...source.head.rows[0].cells];
+  const clonedCells = [...view.table.tHead.rows[0].cells];
+  originalCells.forEach((cell, index) => {
+    const width = cell.getBoundingClientRect().width;
+    if (clonedCells[index]) {
+      clonedCells[index].style.width = `${width}px`;
+      clonedCells[index].style.minWidth = `${width}px`;
+      clonedCells[index].style.maxWidth = `${width}px`;
+    }
+  });
+
+  const firstWidth = originalCells[0]?.getBoundingClientRect().width || 0;
+  const firstHeight = source.head.getBoundingClientRect().height || source.headHeight;
+  view.root.style.top = `${top}px`;
+  view.root.style.left = `${visibleLeft}px`;
+  view.root.style.width = `${visibleWidth}px`;
+  view.table.style.width = `${tableRect.width}px`;
+  view.table.style.transform = `translateX(${-source.wrapper.scrollLeft}px)`;
+  view.corner.textContent = originalCells[0]?.textContent || "";
+  view.corner.style.width = `${firstWidth}px`;
+  view.corner.style.height = `${firstHeight}px`;
+  view.root.classList.add("visible");
 }
 
 function empty(textValue) {
