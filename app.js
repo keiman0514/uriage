@@ -1,4 +1,4 @@
-const APP_ASSET_VERSION = "20260610-mobile-cards-13";
+const APP_ASSET_VERSION = "20260610-store-switch-14";
 const APP_BASE_URL = new URL(".", document.currentScript?.src || location.href).href;
 let pdfjsLib = globalThis.pdfjsLib || null;
 if (pdfjsLib?.getDocument) {
@@ -10,9 +10,12 @@ const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const WEEKDAY_ORDER = ["月", "火", "水", "木", "金", "土", "日"];
 const CHART_COLORS = ["#0f7a68", "#b86b00", "#355f7c", "#9a4f17", "#52796f", "#6d5c3f"];
 const PDF_SECTION_SPLIT_PATTERN = /(?=売\s*上\s*Ａ|月\s*内\s*仕\s*入|原\s*価|売\s*上\s*利\s*益|経費合計|人件費|水道光熱費|消耗品費|その他\s*4|利\s*益\s*H)/g;
+const DEFAULT_STORE_NAME = "ちょもらんま西荻";
+const DEFAULT_STORE_KEY = normalizeStoreKey(DEFAULT_STORE_NAME);
 
 let usedEmbeddedSample = false;
 let activeMonthKey = "";
+let activeStoreKey = "";
 let pendingMonthYear = null;
 let floatingTable = null;
 let floatingTableFrame = 0;
@@ -24,6 +27,7 @@ if (!state.daily.length && !state.financials.length && window.SALES_DASHBOARD_SA
   state.files = window.SALES_DASHBOARD_SAMPLE.files || [];
   usedEmbeddedSample = true;
 }
+Object.assign(state, normalizeState(state));
 
 const els = {
   dropZone: document.querySelector("#dropZone"),
@@ -32,6 +36,8 @@ const els = {
   message: document.querySelector("#message"),
   backupButton: document.querySelector("#backupButton"),
   clearButton: document.querySelector("#clearButton"),
+  storeSelect: document.querySelector("#storeSelect"),
+  currentStoreBadge: document.querySelector("#currentStoreBadge"),
   yearSelect: document.querySelector("#yearSelect"),
   monthSelect: document.querySelector("#monthSelect"),
   monthApplyButton: document.querySelector("#monthApplyButton"),
@@ -132,6 +138,14 @@ function wireEvents() {
     setMessage("すべて削除しました。");
   });
 
+  els.storeSelect?.addEventListener("change", () => {
+    activeStoreKey = els.storeSelect.value;
+    activeMonthKey = "";
+    pendingMonthYear = null;
+    renderAll();
+    setActiveView("month");
+  });
+
   els.analysisNav.addEventListener("click", (event) => {
     const button = event.target.closest("[data-view]");
     if (!button) return;
@@ -175,6 +189,8 @@ function wireEvents() {
     event.preventDefault();
     const item = {
       id: crypto.randomUUID(),
+      storeKey: getActiveStoreKey(),
+      storeName: getActiveStoreName(),
       name: els.eventName.value.trim(),
       type: els.eventType.value,
       start: els.eventStart.value,
@@ -252,11 +268,14 @@ function replaceSource(sourceName, type, payload) {
 
   const daily = payload.daily || [];
   const financials = payload.financials || [];
+  const store = daily[0] || financials[0] || parseStoreFromName(sourceName);
   state.daily.push(...daily);
   state.financials.push(...financials);
   state.files.push({
     name: sourceName,
     type,
+    storeKey: store.storeKey,
+    storeName: store.storeName,
     importedAt: new Date().toISOString(),
     dailyRows: daily.length,
     financialRows: financials.length,
@@ -265,6 +284,7 @@ function replaceSource(sourceName, type, payload) {
 
 async function parseSalesWorkbook(file) {
   const monthInfo = parseMonthFromName(file.name, "excel");
+  const store = parseStoreFromName(file.name);
   const zip = await window.JSZip.loadAsync(file);
   const workbookXml = await readZipText(zip, "xl/workbook.xml");
   const relsXml = await readZipText(zip, "xl/_rels/workbook.xml.rels");
@@ -301,6 +321,8 @@ async function parseSalesWorkbook(file) {
       id: `${file.name}:${formatDate(date)}`,
       sourceName: file.name,
       sourceType: "excel",
+      storeKey: store.storeKey,
+      storeName: store.storeName,
       date: formatDate(date),
       key: `${monthInfo.year}-${pad2(monthInfo.month)}`,
       year: monthInfo.year,
@@ -338,13 +360,16 @@ async function parseFinancialPdf(file) {
     disableWorker: location.protocol === "file:",
   }).promise;
   const lines = [];
+  const pageTexts = [];
 
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
     const textContent = await page.getTextContent();
     const text = textContent.items.map((item) => item.str).join(" ").replace(/\s+/g, " ").trim();
+    pageTexts.push(text);
     lines.push(...text.split(PDF_SECTION_SPLIT_PATTERN));
   }
+  const store = parseStoreFromText(`${file.name} ${pageTexts.join(" ")}`);
 
   const compactLines = lines.map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
   const pick = (pattern) => {
@@ -369,6 +394,8 @@ async function parseFinancialPdf(file) {
     id: `${file.name}:${monthInfo.year}-${pad2(monthInfo.month)}`,
     sourceName: file.name,
     sourceType: "pdf",
+    storeKey: store.storeKey,
+    storeName: store.storeName,
     key: `${monthInfo.year}-${pad2(monthInfo.month)}`,
     year: monthInfo.year,
     month: monthInfo.month,
@@ -413,6 +440,54 @@ function configurePdfJs(pdfModule) {
   if (pdfModule?.GlobalWorkerOptions) {
     pdfModule.GlobalWorkerOptions.workerSrc = new URL(`vendor/pdf.worker.min.mjs?v=${APP_ASSET_VERSION}`, APP_BASE_URL).href;
   }
+}
+
+function parseStoreFromName(name) {
+  return parseStoreFromText(name);
+}
+
+function parseStoreFromText(value) {
+  const normalized = String(value || "").normalize("NFKC").replace(/\s+/g, " ").trim();
+  const compact = normalizeName(normalized);
+  if (compact.includes("西荻")) return makeStoreInfo(DEFAULT_STORE_NAME);
+
+  const excelMatch = normalized.match(/([^\s\d年月._\-\/]+?)\s*営業日報/);
+  if (excelMatch) {
+    const location = cleanStoreLocation(excelMatch[1]);
+    if (location) return makeStoreInfo(`ちょもらんま${location}`);
+  }
+
+  const brandMatch = normalized.match(/ちょもらんま(?:酒場)?\s*([^\s\d年月._\-\/]{1,16})?/);
+  if (brandMatch) {
+    const location = cleanStoreLocation(brandMatch[1] || "");
+    if (location) return makeStoreInfo(`ちょもらんま${location}`);
+    return makeStoreInfo("ちょもらんま");
+  }
+
+  return makeStoreInfo(DEFAULT_STORE_NAME);
+}
+
+function cleanStoreLocation(value) {
+  return normalizeName(value)
+    .replace(/^ちょもらんま/, "")
+    .replace(/^酒場/, "")
+    .replace(/営業.*$/, "")
+    .replace(/報告.*$/, "")
+    .replace(/日報.*$/, "")
+    .replace(/店$/, "");
+}
+
+function makeStoreInfo(value) {
+  const compact = normalizeName(value || DEFAULT_STORE_NAME).replace(/^ちょもらんま酒場/, "ちょもらんま");
+  const storeName = compact.includes("西荻") ? DEFAULT_STORE_NAME : compact || DEFAULT_STORE_NAME;
+  return {
+    storeKey: normalizeStoreKey(storeName),
+    storeName,
+  };
+}
+
+function normalizeStoreKey(value) {
+  return normalizeName(value || DEFAULT_STORE_NAME).replace(/酒場/g, "").toLowerCase();
 }
 
 function normalizeFileNameForMonth(value) {
@@ -520,7 +595,55 @@ function extractAmounts(line) {
   });
 }
 
+function getStoreOptions() {
+  const map = new Map();
+  for (const item of [...state.daily, ...state.financials, ...state.files]) {
+    const store = item.storeName || item.storeKey ? makeStoreInfo(item.storeName || item.storeKey) : parseStoreFromName(item.sourceName || item.name || "");
+    map.set(store.storeKey, store.storeName);
+  }
+  if (!map.size) map.set(DEFAULT_STORE_KEY, DEFAULT_STORE_NAME);
+  return [...map.entries()]
+    .map(([storeKey, storeName]) => ({ storeKey, storeName }))
+    .sort((a, b) => a.storeName.localeCompare(b.storeName, "ja"));
+}
+
+function renderStoreOptions() {
+  const stores = getStoreOptions();
+  if (!stores.some((store) => store.storeKey === activeStoreKey)) {
+    activeStoreKey = stores[0]?.storeKey || DEFAULT_STORE_KEY;
+  }
+  if (els.storeSelect) {
+    els.storeSelect.innerHTML = stores.map((store) => `<option value="${escapeHtml(store.storeKey)}">${escapeHtml(store.storeName)}</option>`).join("");
+    els.storeSelect.value = activeStoreKey;
+  }
+  if (els.currentStoreBadge) {
+    els.currentStoreBadge.textContent = `表示店舗: ${getActiveStoreName()}`;
+  }
+}
+
+function getActiveStoreKey() {
+  return activeStoreKey || els.storeSelect?.value || DEFAULT_STORE_KEY;
+}
+
+function getActiveStoreName() {
+  const key = getActiveStoreKey();
+  return getStoreOptions().find((store) => store.storeKey === key)?.storeName || DEFAULT_STORE_NAME;
+}
+
+function isActiveStoreItem(item) {
+  return (item.storeKey || DEFAULT_STORE_KEY) === getActiveStoreKey();
+}
+
+function activeDailyRows() {
+  return state.daily.filter(isActiveStoreItem);
+}
+
+function activeFinancialRows() {
+  return state.financials.filter(isActiveStoreItem);
+}
+
 function renderAll() {
+  renderStoreOptions();
   const monthly = buildMonthly();
   renderYearOptions(monthly);
   renderMonthOptions(monthly);
@@ -543,8 +666,10 @@ function renderAll() {
 }
 
 function buildMonthly() {
-  const dailyByMonth = groupBy(state.daily, (row) => row.key);
-  const financialByMonth = new Map(state.financials.map((item) => [item.key, item]));
+  const dailyRows = activeDailyRows();
+  const financialRows = activeFinancialRows();
+  const dailyByMonth = groupBy(dailyRows, (row) => row.key);
+  const financialByMonth = new Map(financialRows.map((item) => [item.key, item]));
   const keys = [...new Set([...dailyByMonth.keys(), ...financialByMonth.keys()])].sort();
   const monthly = keys.map((key) => {
     const rows = dailyByMonth.get(key) || [];
@@ -633,7 +758,7 @@ function aggregateDaily(rows) {
 }
 
 function renderYearOptions(monthly) {
-  const years = [...new Set([...monthly.map((item) => item.year), ...state.daily.map((item) => item.year)])].sort((a, b) => b - a);
+  const years = [...new Set([...monthly.map((item) => item.year), ...activeDailyRows().map((item) => item.year)])].sort((a, b) => b - a);
   const current = Number(els.yearSelect.value) || years[0] || new Date().getFullYear();
   els.yearSelect.innerHTML = years.map((year) => `<option value="${year}">${year}年</option>`).join("");
   if (years.includes(current)) els.yearSelect.value = String(current);
@@ -715,14 +840,15 @@ function renderMonthDetail(monthly) {
     return;
   }
 
-  const rows = state.daily.filter((row) => row.key === item.key).sort((a, b) => a.date.localeCompare(b.date));
+  const storeDaily = activeDailyRows();
+  const rows = storeDaily.filter((row) => row.key === item.key).sort((a, b) => a.date.localeCompare(b.date));
   const previous = monthly.find((row) => row.year === item.year - 1 && row.month === item.month);
   const previousMonth = monthly.find((row) => row.key === previousMonthKey(item.key));
   const currentMetrics = monthMetricSet(item, rows);
-  const previousMetrics = previous ? monthMetricSet(previous, state.daily.filter((row) => row.key === previous.key)) : {};
-  const previousMonthMetrics = previousMonth ? monthMetricSet(previousMonth, state.daily.filter((row) => row.key === previousMonth.key)) : {};
+  const previousMetrics = previous ? monthMetricSet(previous, storeDaily.filter((row) => row.key === previous.key)) : {};
+  const previousMonthMetrics = previousMonth ? monthMetricSet(previousMonth, storeDaily.filter((row) => row.key === previousMonth.key)) : {};
   const hasDailyExcel = rows.length > 0;
-  els.monthDetailTitle.textContent = `${item.year}年${item.month}月の状態`;
+  els.monthDetailTitle.textContent = `${getActiveStoreName()} ${item.year}年${item.month}月の状態`;
   els.monthDetailKpis.innerHTML = [
     ["売上", yen(item.sales), marker(item.yoy.sales, "前年比"), tone(item.yoy.sales)],
     ["客数", hasDailyExcel ? `${integer(item.customers)}人` : "-", hasDailyExcel ? marker(item.yoy.customers, "前年比") : "営業日報Excel未登録", hasDailyExcel ? tone(item.yoy.customers) : "warn"],
@@ -934,7 +1060,7 @@ function renderMonthDiagnosis(item, rows, previousYear, previousMonth) {
 function buildMonthDiagnosis(item, rows, previousYear, previousMonth) {
   const cards = [];
   const comparison = previousYear || previousMonth;
-  const comparisonRows = comparison ? state.daily.filter((row) => row.key === comparison.key) : [];
+  const comparisonRows = comparison ? activeDailyRows().filter((row) => row.key === comparison.key) : [];
   const comparisonLabel = previousYear ? "前年同月" : previousMonth ? "前月" : "比較月";
   const currentAgg = aggregateDaily(rows);
   const comparisonAgg = aggregateDaily(comparisonRows);
@@ -1249,8 +1375,9 @@ function renderLunchDinnerView(monthly) {
 function renderWeekdayChart() {
   const year = Number(els.yearSelect.value);
   const metric = els.weekdayMetricSelect.value;
-  const rows = state.daily.filter((row) => row.year === year);
-  const prevRows = state.daily.filter((row) => row.year === year - 1);
+  const storeDaily = activeDailyRows();
+  const rows = storeDaily.filter((row) => row.year === year);
+  const prevRows = storeDaily.filter((row) => row.year === year - 1);
   const current = weekdayMetricRows(rows, metric);
   const previous = weekdayMetricRows(prevRows, metric);
   els.weekdayChart.innerHTML = groupedBarChart(
@@ -1265,8 +1392,9 @@ function renderWeekdayChart() {
 function renderWeekdayTable() {
   const year = Number(els.yearSelect.value);
   const metric = els.weekdayMetricSelect.value;
-  const current = weekdayMetricRows(state.daily.filter((row) => row.year === year), metric);
-  const previous = weekdayMetricRows(state.daily.filter((row) => row.year === year - 1), metric);
+  const storeDaily = activeDailyRows();
+  const current = weekdayMetricRows(storeDaily.filter((row) => row.year === year), metric);
+  const previous = weekdayMetricRows(storeDaily.filter((row) => row.year === year - 1), metric);
   const type = metric === "drinkRatio" ? "ratio" : metric === "unit" || metric === "sales" || metric === "lunch" || metric === "dinner" ? "yen" : "count";
   els.weekdayTable.innerHTML = table(
     ["曜日", `${year}年`, `${year - 1}年`, "前年差", "日数", "祝日"],
@@ -1384,23 +1512,24 @@ function aggregatePeriod(startMonth, endMonth) {
   if (!startMonth || !endMonth || startMonth > endMonth) return null;
   const start = new Date(`${startMonth}-01T00:00:00`);
   const end = endOfMonth(endMonth);
-  const dailyRows = state.daily.filter((row) => {
+  const dailyRows = activeDailyRows().filter((row) => {
     const date = new Date(`${row.date}T00:00:00`);
     return date >= start && date <= end;
   });
   const agg = aggregateDaily(dailyRows);
-  const profit = state.financials
+  const profit = activeFinancialRows()
     .filter((item) => item.key >= startMonth && item.key <= endMonth)
     .reduce((sum, item) => sum + (item.profit || 0), 0);
   return { ...agg, profit: profit || null };
 }
 
 function renderEventImpact() {
-  if (!state.events.length) {
+  const events = state.events.filter((event) => !event.storeKey || event.storeKey === getActiveStoreKey());
+  if (!events.length) {
     els.eventImpact.innerHTML = empty("キャンペーンや出来事を登録すると、前期間との比較が出ます。");
     return;
   }
-  const rows = state.events
+  const rows = events
     .slice()
     .sort((a, b) => b.start.localeCompare(a.start))
     .map((event) => {
@@ -1434,7 +1563,7 @@ function aggregateDateRange(startDate, endDate) {
   const start = new Date(`${startDate}T00:00:00`);
   const end = new Date(`${endDate}T23:59:59`);
   return aggregateDaily(
-    state.daily.filter((row) => {
+    activeDailyRows().filter((row) => {
       const date = new Date(`${row.date}T00:00:00`);
       return date >= start && date <= end;
     }),
@@ -1472,7 +1601,7 @@ function renderInsights(monthly) {
     insights.push(`${selectedYear}年で売上が強い月は${best.label}、弱い月は${worst.label}です。`);
   }
 
-  const weekdayRows = weekdayMetricRows(state.daily.filter((row) => row.year === selectedYear), "lunch").filter((item) => item.value);
+  const weekdayRows = weekdayMetricRows(activeDailyRows().filter((row) => row.year === selectedYear), "lunch").filter((item) => item.value);
   if (weekdayRows.length) {
     const bestWeekday = maxBy(weekdayRows, (item) => item.value);
     insights.push(`${selectedYear}年のランチ平均が高い曜日は${bestWeekday.label}曜で、1日平均${yen(bestWeekday.value)}です。`);
@@ -1500,6 +1629,7 @@ function renderFileList() {
       (file) => `
         <div class="file-row">
           <span title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+          <span class="pill">${escapeHtml(file.storeName || DEFAULT_STORE_NAME)}</span>
           <span class="pill">${file.type === "pdf" ? "PDF" : "Excel"} ${file.dailyRows || file.financialRows || 0}件</span>
           <button class="mini-button" data-delete-file="${escapeHtml(file.name)}">削除</button>
         </div>
@@ -1968,10 +2098,22 @@ async function restoreBackup(file) {
 function normalizeState(value) {
   const source = value && typeof value === "object" ? value : {};
   return {
-    daily: Array.isArray(source.daily) ? source.daily : [],
-    financials: Array.isArray(source.financials) ? source.financials : [],
-    events: Array.isArray(source.events) ? source.events : [],
-    files: Array.isArray(source.files) ? source.files : [],
+    daily: Array.isArray(source.daily) ? source.daily.map(normalizeStoredItem) : [],
+    financials: Array.isArray(source.financials) ? source.financials.map(normalizeStoredItem) : [],
+    events: Array.isArray(source.events) ? source.events.map(normalizeStoredItem) : [],
+    files: Array.isArray(source.files) ? source.files.map(normalizeStoredItem) : [],
+  };
+}
+
+function normalizeStoredItem(item) {
+  const base = item && typeof item === "object" ? item : {};
+  const store = base.storeName || base.storeKey
+    ? makeStoreInfo(base.storeName || base.storeKey)
+    : parseStoreFromName(base.sourceName || base.name || "");
+  return {
+    ...base,
+    storeKey: store.storeKey,
+    storeName: store.storeName,
   };
 }
 
