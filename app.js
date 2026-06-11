@@ -1,4 +1,4 @@
-const APP_ASSET_VERSION = "20260610-store-switch-14";
+const APP_ASSET_VERSION = "20260611-month-review-15";
 const APP_BASE_URL = new URL(".", document.currentScript?.src || location.href).href;
 let pdfjsLib = globalThis.pdfjsLib || null;
 if (pdfjsLib?.getDocument) {
@@ -46,6 +46,11 @@ const els = {
   analysisNav: document.querySelector("#analysisNav"),
   viewPanels: document.querySelectorAll("[data-view-panel]"),
   overviewTable: document.querySelector("#overviewTable"),
+  monthReviewSelect: document.querySelector("#monthReviewSelect"),
+  monthReviewSummary: document.querySelector("#monthReviewSummary"),
+  monthReviewYears: document.querySelector("#monthReviewYears"),
+  monthReviewRanking: document.querySelector("#monthReviewRanking"),
+  monthReviewInsight: document.querySelector("#monthReviewInsight"),
   weekdayMetricSelect: document.querySelector("#weekdayMetricSelect"),
   monthlyChart: document.querySelector("#monthlyChart"),
   monthDetailTitle: document.querySelector("#monthDetailTitle"),
@@ -174,6 +179,7 @@ function wireEvents() {
   [
     els.weekendMode,
     els.holidayAsWeekend,
+    els.monthReviewSelect,
     els.weekdayMetricSelect,
     els.periodAStart,
     els.periodAEnd,
@@ -650,6 +656,7 @@ function renderAll() {
   setDefaultPeriods(monthly);
   renderOverviewTable(monthly);
   renderMonthDetail(monthly);
+  renderMonthReview(monthly);
   renderMonthlyChart(monthly);
   renderLaborView(monthly);
   renderDrinkView(monthly);
@@ -1007,6 +1014,149 @@ function previousMonthKey(key) {
   const [year, month] = key.split("-").map(Number);
   const date = new Date(year, month - 2, 1);
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
+}
+
+function renderMonthReview(monthly) {
+  if (!els.monthReviewSelect) return;
+  renderMonthReviewSelect(monthly);
+  if (!monthly.length) {
+    els.monthReviewSummary.innerHTML = empty("月別比較できるデータがありません。");
+    els.monthReviewYears.innerHTML = empty("データを読み込むと、選んだ月の過去年比較が出ます。");
+    els.monthReviewRanking.innerHTML = empty("データを読み込むと、12か月の強弱が出ます。");
+    els.monthReviewInsight.innerHTML = empty("データを読み込むと、月別の見立てが出ます。");
+    return;
+  }
+
+  const selectedMonth = Number(els.monthReviewSelect.value) || new Date().getMonth() + 1;
+  const selectedRows = monthly
+    .filter((item) => item.month === selectedMonth && (Number.isFinite(item.sales) || Number.isFinite(item.profit)))
+    .sort((a, b) => a.year - b.year);
+  const ranking = buildMonthSeasonality(monthly);
+  const selectedRank = ranking.findIndex((item) => item.month === selectedMonth);
+
+  if (!selectedRows.length) {
+    els.monthReviewSummary.innerHTML = empty(`${selectedMonth}月のデータがありません。`);
+    els.monthReviewYears.innerHTML = empty(`${selectedMonth}月の過去年データがありません。`);
+    els.monthReviewRanking.innerHTML = renderMonthRankingTable(ranking);
+    els.monthReviewInsight.innerHTML = empty("対象月のデータが増えると、見立てが出ます。");
+    return;
+  }
+
+  const salesRows = selectedRows.filter((item) => Number.isFinite(item.sales));
+  const profitRows = selectedRows.filter((item) => Number.isFinite(item.profit));
+  const latest = selectedRows[selectedRows.length - 1];
+  const previous = selectedRows[selectedRows.length - 2];
+  const bestSales = salesRows.length ? maxBy(salesRows, (item) => item.sales) : null;
+  const worstSales = salesRows.length ? minBy(salesRows, (item) => item.sales) : null;
+  const bestProfit = profitRows.length ? maxBy(profitRows, (item) => item.profit) : null;
+  const averageSales = averageNumber(selectedRows.map((item) => item.sales));
+  const averageProfit = averageNumber(selectedRows.map((item) => item.profit));
+
+  els.monthReviewSummary.innerHTML = [
+    ["対象月", `${selectedMonth}月`, `${selectedRows.length}年分のデータ`, ""],
+    ["平均売上", yen(averageSales), bestSales ? `最高 ${bestSales.year}年 ${yen(bestSales.sales)}` : "-", ""],
+    ["平均利益", profitYen(averageProfit), bestProfit ? `最高 ${bestProfit.year}年 ${yen(bestProfit.profit)}` : "-", Number.isFinite(averageProfit) ? (averageProfit >= 0 ? "good" : "bad") : "warn"],
+    ["最新年", `${latest.year}年`, `${yen(latest.sales)} / 利益 ${profitYen(latest.profit)}`, tone(pctChange(latest.sales, previous?.sales))],
+    ["月別順位", selectedRank >= 0 ? `${selectedRank + 1}位` : "-", ranking.length ? `${ranking.length}か月中の平均売上順位` : "-", selectedRank === 0 ? "good" : selectedRank === ranking.length - 1 ? "bad" : ""],
+  ]
+    .map(
+      ([label, value, sub, className]) => `
+        <article class="kpi-card">
+          <p class="kpi-label">${label}</p>
+          <p class="kpi-value ${className || ""}">${value}</p>
+          <p class="kpi-sub">${sub}</p>
+        </article>
+      `,
+    )
+    .join("");
+
+  els.monthReviewYears.innerHTML = table(
+    ["年", "売上", "前年比", "利益", "利益率", "客数", "客単価", "ドリンク率", "判定"],
+    selectedRows
+      .slice()
+      .reverse()
+      .map((item) => {
+        const prev = selectedRows.find((target) => target.year === item.year - 1);
+        return [
+          `${item.year}年`,
+          yen(item.sales),
+          marker(pctChange(item.sales, prev?.sales)),
+          profitYen(item.profit),
+          percent(div(item.profit, item.sales)),
+          integer(item.customers),
+          yen(item.unit),
+          percent(item.drinkRatio),
+          item.profit === null ? "利益未登録" : profitBadge(item.profit),
+        ];
+      }),
+  );
+  els.monthReviewRanking.innerHTML = renderMonthRankingTable(ranking);
+
+  const strongest = ranking[0];
+  const weakest = ranking[ranking.length - 1];
+  const latestDiff = diffNumber(latest.sales, averageSales);
+  const insightRows = [
+    strongest ? `平均売上が一番強い月は${strongest.label}で、平均${yen(strongest.avgSales)}です。` : "",
+    weakest && strongest !== weakest ? `弱めの月は${weakest.label}で、平均${yen(weakest.avgSales)}です。` : "",
+    bestSales && worstSales ? `${selectedMonth}月の過去最高売上は${bestSales.year}年、弱かった年は${worstSales.year}年です。` : "",
+    Number.isFinite(latestDiff) ? `最新の${latest.year}年${selectedMonth}月は、過去平均より${latestDiff >= 0 ? "上" : "下"}に${yen(Math.abs(latestDiff))}ずれています。` : "",
+  ].filter(Boolean);
+
+  els.monthReviewInsight.innerHTML = insightRows.length
+    ? insightRows.map((textValue) => `<div class="insight">${escapeHtml(textValue)}</div>`).join("")
+    : empty("月別の見立てを出すには、同じ月の複数年データが必要です。");
+}
+
+function renderMonthReviewSelect(monthly) {
+  const current = Number(els.monthReviewSelect.value);
+  const activeSelected = Number((activeMonthKey || els.monthSelect?.value || "").split("-")[1]);
+  const fallback = activeSelected || monthly[monthly.length - 1]?.month || new Date().getMonth() + 1;
+  const nextMonth = current || fallback;
+  els.monthReviewSelect.innerHTML = Array.from({ length: 12 }, (_, index) => {
+    const month = index + 1;
+    return `<option value="${month}">${month}月</option>`;
+  }).join("");
+  els.monthReviewSelect.value = String(nextMonth);
+}
+
+function buildMonthSeasonality(monthly) {
+  return Array.from({ length: 12 }, (_, index) => {
+    const month = index + 1;
+    const rows = monthly.filter((item) => item.month === month && Number.isFinite(item.sales));
+    const profitRows = rows.filter((item) => Number.isFinite(item.profit));
+    const bestSales = rows.length ? maxBy(rows, (item) => item.sales) : null;
+    return {
+      month,
+      label: `${month}月`,
+      count: rows.length,
+      avgSales: averageNumber(rows.map((item) => item.sales)),
+      avgProfit: averageNumber(rows.map((item) => item.profit)),
+      avgCustomers: averageNumber(rows.map((item) => item.customers)),
+      avgUnit: averageNumber(rows.map((item) => item.unit)),
+      blackRatio: div(profitRows.filter((item) => item.profit >= 0).length, profitRows.length),
+      bestSales,
+    };
+  })
+    .filter((item) => item.count)
+    .sort((a, b) => (b.avgSales || 0) - (a.avgSales || 0));
+}
+
+function renderMonthRankingTable(ranking) {
+  if (!ranking.length) return empty("月別ランキングを作れるデータがありません。");
+  return table(
+    ["順位", "月", "年数", "平均売上", "平均利益", "黒字率", "平均客単価", "最高売上", "判定"],
+    ranking.map((item, index) => [
+      `${index + 1}位`,
+      item.label,
+      `${item.count}年`,
+      yen(item.avgSales),
+      profitYen(item.avgProfit),
+      percent(item.blackRatio),
+      yen(item.avgUnit),
+      item.bestSales ? `${item.bestSales.year}年 ${yen(item.bestSales.sales)}` : "-",
+      index === 0 ? "強い月" : index === ranking.length - 1 ? "弱め" : index <= 2 ? "強め" : "標準",
+    ]),
+  );
 }
 
 function renderMonthExpenseBreakdown(item) {
@@ -2273,6 +2423,12 @@ function formatByType(value, type) {
 function tone(value) {
   if (!Number.isFinite(value)) return "";
   return value >= 0 ? "good" : "bad";
+}
+
+function averageNumber(values) {
+  const finite = values.filter(Number.isFinite);
+  if (!finite.length) return null;
+  return finite.reduce((sum, value) => sum + value, 0) / finite.length;
 }
 
 function maxBy(items, fn) {

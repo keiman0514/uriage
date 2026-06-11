@@ -6,7 +6,7 @@
     <title>店舗売上データベース</title>
     <link rel="stylesheet" href="./styles.css" />
     <script src="./vendor/jszip.min.js"></script>
-    <script src="./vendor/pdf.browser.js?v=20260610-store-switch-14"></script>
+    <script src="./vendor/pdf.browser.js?v=20260611-month-review-15"></script>
   </head>
   <body>
     <header class="app-header">
@@ -74,6 +74,7 @@
 
       <nav id="analysisNav" class="analysis-nav" aria-label="分析メニュー">
         <button type="button" class="analysis-tab active" data-view="month"><span class="tab-icon icon-month" aria-hidden="true"></span>月別詳細</button>
+        <button type="button" class="analysis-tab" data-view="monthReview"><span class="tab-icon icon-month" aria-hidden="true"></span>月別</button>
         <button type="button" class="analysis-tab" data-view="overview"><span class="tab-icon icon-overview" aria-hidden="true"></span>一覧表示</button>
         <button type="button" class="analysis-tab" data-view="sales"><span class="tab-icon icon-sales" aria-hidden="true"></span>売上推移</button>
         <button type="button" class="analysis-tab" data-view="labor"><span class="tab-icon icon-cost" aria-hidden="true"></span>人件費/原価</button>
@@ -165,6 +166,51 @@
             </div>
           </div>
           <div id="overviewTable" class="table-wrap"></div>
+        </article>
+      </section>
+
+      <section class="view-panel" data-view-panel="monthReview">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Month Review</p>
+              <h2>月別の強弱</h2>
+            </div>
+            <div class="control-group compact-control">
+              <label for="monthReviewSelect">見る月</label>
+              <select id="monthReviewSelect"></select>
+            </div>
+          </div>
+          <div id="monthReviewSummary" class="kpi-grid compact-kpi-grid"></div>
+        </article>
+        <div class="grid two">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Selected Month</p>
+                <h2>選んだ月の過去年比較</h2>
+              </div>
+            </div>
+            <div id="monthReviewYears" class="table-wrap"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Seasonality</p>
+                <h2>12か月のランキング</h2>
+              </div>
+            </div>
+            <div id="monthReviewRanking" class="table-wrap"></div>
+          </article>
+        </div>
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Reading</p>
+              <h2>月別の見立て</h2>
+            </div>
+          </div>
+          <div id="monthReviewInsight" class="insights"></div>
         </article>
       </section>
 
@@ -354,6 +400,6 @@
       </section>
     </main>
 
-    <script src="./app.js?v=20260610-store-switch-14"></script>
+    <script src="./app.js?v=20260611-month-review-15"></script>
   </body>
 </html>

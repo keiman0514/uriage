@@ -280,6 +280,10 @@ select:focus-visible,
   min-width: 220px;
 }
 
+.compact-control {
+  min-width: 130px;
+}
+
 .current-store-badge {
   margin: 0;
   color: var(--accent-dark);
