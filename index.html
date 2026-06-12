@@ -6,7 +6,7 @@
     <title>店舗売上データベース</title>
     <link rel="stylesheet" href="./styles.css" />
     <script src="./vendor/jszip.min.js"></script>
-    <script src="./vendor/pdf.browser.js?v=20260611-month-review-15"></script>
+    <script src="./vendor/pdf.browser.js?v=20260612-store-compare-17"></script>
   </head>
   <body>
     <header class="app-header">
@@ -83,6 +83,7 @@
         <button type="button" class="analysis-tab" data-view="weekday"><span class="tab-icon icon-weekday" aria-hidden="true"></span>曜日分析</button>
         <button type="button" class="analysis-tab" data-view="profit"><span class="tab-icon icon-profit" aria-hidden="true"></span>利益・赤字</button>
         <button type="button" class="analysis-tab" data-view="compare"><span class="tab-icon icon-compare" aria-hidden="true"></span>期間比較</button>
+        <button type="button" class="analysis-tab" data-view="storeCompare"><span class="tab-icon icon-compare" aria-hidden="true"></span>各店比較</button>
         <button type="button" class="analysis-tab" data-view="campaign"><span class="tab-icon icon-campaign" aria-hidden="true"></span>キャンペーン</button>
         <button type="button" class="analysis-tab" data-view="records"><span class="tab-icon icon-records" aria-hidden="true"></span>登録データ</button>
       </nav>
@@ -360,6 +361,70 @@
         </article>
       </section>
 
+      <section class="view-panel" data-view-panel="storeCompare">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Store Compare</p>
+              <h2>各店比較</h2>
+            </div>
+          </div>
+          <div class="period-controls store-compare-controls">
+            <div>
+              <strong>比較条件</strong>
+              <label>比較方法
+                <select id="storeCompareMode">
+                  <option value="month">月別比較</option>
+                  <option value="period">期間比較</option>
+                </select>
+              </label>
+              <label>見る指標
+                <select id="storeCompareMetric">
+                  <option value="sales">売上</option>
+                  <option value="profit">利益</option>
+                  <option value="dailySales">1日平均売上</option>
+                  <option value="customers">客数</option>
+                  <option value="unit">客単価</option>
+                  <option value="drinkRatio">ドリンク率</option>
+                  <option value="laborRatio">人件費率</option>
+                  <option value="costRatio">原価率</option>
+                </select>
+              </label>
+            </div>
+            <div id="storeCompareMonthControls">
+              <strong>月別比較</strong>
+              <label>対象月 <select id="storeCompareMonth"></select></label>
+            </div>
+            <div id="storeComparePeriodControls" hidden>
+              <strong>期間比較</strong>
+              <label>開始 <input id="storeComparePeriodStart" type="month" /></label>
+              <label>終了 <input id="storeComparePeriodEnd" type="month" /></label>
+            </div>
+          </div>
+          <div id="storeCompareSummary" class="kpi-grid compact-kpi-grid"></div>
+        </article>
+        <div class="grid two">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Ranking</p>
+                <h2>店舗別ランキング</h2>
+              </div>
+            </div>
+            <div id="storeCompareTable" class="table-wrap"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Reading</p>
+                <h2>比較の見立て</h2>
+              </div>
+            </div>
+            <div id="storeCompareInsight" class="insights"></div>
+          </article>
+        </div>
+      </section>
+
       <section class="view-panel" data-view-panel="campaign">
         <article class="panel">
           <div class="panel-head">
@@ -400,6 +465,6 @@
       </section>
     </main>
 
-    <script src="./app.js?v=20260611-month-review-15"></script>
+    <script src="./app.js?v=20260612-store-compare-17"></script>
   </body>
 </html>

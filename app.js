@@ -1,4 +1,4 @@
-const APP_ASSET_VERSION = "20260611-month-review-15";
+const APP_ASSET_VERSION = "20260612-store-compare-17";
 const APP_BASE_URL = new URL(".", document.currentScript?.src || location.href).href;
 let pdfjsLib = globalThis.pdfjsLib || null;
 if (pdfjsLib?.getDocument) {
@@ -11,7 +11,18 @@ const WEEKDAY_ORDER = ["月", "火", "水", "木", "金", "土", "日"];
 const CHART_COLORS = ["#0f7a68", "#b86b00", "#355f7c", "#9a4f17", "#52796f", "#6d5c3f"];
 const PDF_SECTION_SPLIT_PATTERN = /(?=売\s*上\s*Ａ|月\s*内\s*仕\s*入|原\s*価|売\s*上\s*利\s*益|経費合計|人件費|水道光熱費|消耗品費|その他\s*4|利\s*益\s*H)/g;
 const DEFAULT_STORE_NAME = "ちょもらんま西荻";
+const AREA_STORE_NAMES = ["ちょもらんま西荻", "紅虎軒", "蒼龍吉祥寺", "蒼龍六本木", "万豚記津田沼"];
 const DEFAULT_STORE_KEY = normalizeStoreKey(DEFAULT_STORE_NAME);
+const STORE_COMPARE_METRICS = {
+  sales: { label: "売上", type: "yen", lowerBetter: false },
+  profit: { label: "利益", type: "profit", lowerBetter: false },
+  dailySales: { label: "1日平均売上", type: "yen", lowerBetter: false },
+  customers: { label: "客数", type: "count", lowerBetter: false },
+  unit: { label: "客単価", type: "yen", lowerBetter: false },
+  drinkRatio: { label: "ドリンク率", type: "ratio", lowerBetter: false },
+  laborRatio: { label: "人件費率", type: "ratio", lowerBetter: true },
+  costRatio: { label: "原価率", type: "ratio", lowerBetter: true },
+};
 
 let usedEmbeddedSample = false;
 let activeMonthKey = "";
@@ -77,6 +88,16 @@ const els = {
   periodBStart: document.querySelector("#periodBStart"),
   periodBEnd: document.querySelector("#periodBEnd"),
   periodCompare: document.querySelector("#periodCompare"),
+  storeCompareMode: document.querySelector("#storeCompareMode"),
+  storeCompareMetric: document.querySelector("#storeCompareMetric"),
+  storeCompareMonth: document.querySelector("#storeCompareMonth"),
+  storeComparePeriodStart: document.querySelector("#storeComparePeriodStart"),
+  storeComparePeriodEnd: document.querySelector("#storeComparePeriodEnd"),
+  storeCompareMonthControls: document.querySelector("#storeCompareMonthControls"),
+  storeComparePeriodControls: document.querySelector("#storeComparePeriodControls"),
+  storeCompareSummary: document.querySelector("#storeCompareSummary"),
+  storeCompareTable: document.querySelector("#storeCompareTable"),
+  storeCompareInsight: document.querySelector("#storeCompareInsight"),
   eventForm: document.querySelector("#eventForm"),
   eventName: document.querySelector("#eventName"),
   eventType: document.querySelector("#eventType"),
@@ -185,6 +206,11 @@ function wireEvents() {
     els.periodAEnd,
     els.periodBStart,
     els.periodBEnd,
+    els.storeCompareMode,
+    els.storeCompareMetric,
+    els.storeCompareMonth,
+    els.storeComparePeriodStart,
+    els.storeComparePeriodEnd,
   ]
     .filter(Boolean)
     .forEach((element) => {
@@ -455,6 +481,8 @@ function parseStoreFromName(name) {
 function parseStoreFromText(value) {
   const normalized = String(value || "").normalize("NFKC").replace(/\s+/g, " ").trim();
   const compact = normalizeName(normalized);
+  const knownStore = matchKnownStoreName(compact);
+  if (knownStore) return makeStoreInfo(knownStore);
   if (compact.includes("西荻")) return makeStoreInfo(DEFAULT_STORE_NAME);
 
   const excelMatch = normalized.match(/([^\s\d年月._\-\/]+?)\s*営業日報/);
@@ -473,6 +501,17 @@ function parseStoreFromText(value) {
   return makeStoreInfo(DEFAULT_STORE_NAME);
 }
 
+function matchKnownStoreName(value) {
+  const compact = normalizeName(value);
+  if (!compact) return "";
+  if (compact.includes("西荻")) return "ちょもらんま西荻";
+  if (compact.includes("紅虎軒")) return "紅虎軒";
+  if (compact.includes("蒼龍吉祥寺") || (compact.includes("蒼龍") && compact.includes("吉祥寺"))) return "蒼龍吉祥寺";
+  if (compact.includes("蒼龍六本木") || (compact.includes("蒼龍") && compact.includes("六本木"))) return "蒼龍六本木";
+  if (compact.includes("万豚記津田沼") || compact.includes("萬豚記津田沼") || ((compact.includes("万豚記") || compact.includes("萬豚記")) && compact.includes("津田沼"))) return "万豚記津田沼";
+  return "";
+}
+
 function cleanStoreLocation(value) {
   return normalizeName(value)
     .replace(/^ちょもらんま/, "")
@@ -485,7 +524,7 @@ function cleanStoreLocation(value) {
 
 function makeStoreInfo(value) {
   const compact = normalizeName(value || DEFAULT_STORE_NAME).replace(/^ちょもらんま酒場/, "ちょもらんま");
-  const storeName = compact.includes("西荻") ? DEFAULT_STORE_NAME : compact || DEFAULT_STORE_NAME;
+  const storeName = matchKnownStoreName(compact) || (compact.includes("西荻") ? DEFAULT_STORE_NAME : compact || DEFAULT_STORE_NAME);
   return {
     storeKey: normalizeStoreKey(storeName),
     storeName,
@@ -665,6 +704,7 @@ function renderAll() {
   renderWeekdayTable();
   renderProfitView(monthly);
   renderPeriodCompare();
+  renderStoreCompare();
   renderEventImpact();
   renderInsights(monthly);
   renderFileList();
@@ -673,8 +713,17 @@ function renderAll() {
 }
 
 function buildMonthly() {
-  const dailyRows = activeDailyRows();
-  const financialRows = activeFinancialRows();
+  return buildMonthlyFromRows(activeDailyRows(), activeFinancialRows());
+}
+
+function buildMonthlyForStore(storeKey) {
+  return buildMonthlyFromRows(
+    state.daily.filter((row) => (row.storeKey || DEFAULT_STORE_KEY) === storeKey),
+    state.financials.filter((row) => (row.storeKey || DEFAULT_STORE_KEY) === storeKey),
+  );
+}
+
+function buildMonthlyFromRows(dailyRows, financialRows) {
   const dailyByMonth = groupBy(dailyRows, (row) => row.key);
   const financialByMonth = new Map(financialRows.map((item) => [item.key, item]));
   const keys = [...new Set([...dailyByMonth.keys(), ...financialByMonth.keys()])].sort();
@@ -1673,6 +1722,250 @@ function aggregatePeriod(startMonth, endMonth) {
   return { ...agg, profit: profit || null };
 }
 
+function renderStoreCompare() {
+  if (!els.storeCompareTable) return;
+  renderStoreCompareControls();
+  const mode = els.storeCompareMode?.value || "month";
+  const metricKey = els.storeCompareMetric?.value || "sales";
+  const metric = STORE_COMPARE_METRICS[metricKey] || STORE_COMPARE_METRICS.sales;
+  const rows = mode === "period" ? buildStoreComparePeriodRows() : buildStoreCompareMonthRows();
+  const ranked = rankStoreCompareRows(rows, metricKey);
+
+  els.storeCompareMonthControls.hidden = mode !== "month";
+  els.storeComparePeriodControls.hidden = mode !== "period";
+
+  if (!ranked.length) {
+    els.storeCompareSummary.innerHTML = empty("各店比較できるデータがありません。");
+    els.storeCompareTable.innerHTML = empty("比較したい月または期間を選んでください。");
+    els.storeCompareInsight.innerHTML = empty("複数店舗のデータが入ると、店舗ごとの強弱が出ます。");
+    return;
+  }
+
+  const totalSales = ranked.reduce((sum, row) => sum + (Number.isFinite(row.sales) ? row.sales : 0), 0);
+  const profitValues = ranked.map((row) => row.profit).filter(Number.isFinite);
+  const totalProfit = profitValues.length ? profitValues.reduce((sum, value) => sum + value, 0) : null;
+  const top = ranked[0];
+  const second = ranked[1];
+  const label = mode === "period"
+    ? `${els.storeComparePeriodStart.value || "-"}〜${els.storeComparePeriodEnd.value || "-"}`
+    : monthLabelFromKey(els.storeCompareMonth.value);
+  const topValue = storeCompareMetricValue(top, metricKey);
+  const secondValue = second ? storeCompareMetricValue(second, metricKey) : null;
+  const topDiff = diffNumber(topValue, secondValue);
+
+  els.storeCompareSummary.innerHTML = [
+    ["比較対象", label, `${ranked.length}店舗`, ""],
+    [`1位 ${metric.label}`, escapeHtml(top.storeName), formatStoreCompareValue(topValue, metric.type), "good"],
+    ["合計売上", yen(totalSales), `平均 ${yen(div(totalSales, ranked.length))}`, ""],
+    ["合計利益", profitYen(totalProfit), profitValues.length ? `利益率 ${percent(div(totalProfit, totalSales))}` : "PDF未登録", Number.isFinite(totalProfit) ? (totalProfit >= 0 ? "good" : "bad") : "warn"],
+  ]
+    .map(
+      ([cardLabel, value, sub, className]) => `
+        <article class="kpi-card">
+          <p class="kpi-label">${escapeHtml(cardLabel)}</p>
+          <p class="kpi-value ${className || ""}">${value}</p>
+          <p class="kpi-sub">${sub}</p>
+        </article>
+      `,
+    )
+    .join("");
+
+  els.storeCompareTable.innerHTML = table(
+    ["順位", "店舗", metric.label, mode === "month" ? "前年対比" : "平均との差", "売上", "1日平均", "利益", "利益率", "客数", "客単価", "ドリンク率", "人件費率", "原価率"],
+    ranked.map((row, index) => {
+      const value = storeCompareMetricValue(row, metricKey);
+      const average = averageNumber(ranked.map((item) => storeCompareMetricValue(item, metricKey)));
+      const diff = mode === "month" ? row.metricYoY : diffNumber(value, average);
+      return [
+        `${index + 1}位`,
+        escapeHtml(row.storeName),
+        formatStoreCompareValue(value, metric.type),
+        formatStoreCompareDiff(diff, metric, mode),
+        yen(row.sales),
+        yen(row.dailySales),
+        profitYen(row.profit),
+        percent(div(row.profit, row.sales)),
+        integer(row.customers),
+        yen(row.unit),
+        percent(row.drinkRatio),
+        percent(row.laborRatio),
+        percent(row.costRatio),
+      ];
+    }),
+  );
+
+  const redStores = ranked.filter((row) => Number.isFinite(row.profit) && row.profit < 0).map((row) => row.storeName);
+  const insightRows = [
+    `${metric.label}で見ると、${top.storeName}が一番強いです。${second && Number.isFinite(topDiff) ? `2位との差は${formatStoreCompareValue(Math.abs(topDiff), metric.type)}です。` : ""}`,
+    redStores.length ? `赤字の店舗は ${redStores.join("、")} です。` : "利益が入っている店舗は、赤字判定なしです。",
+    metric.lowerBetter ? `${metric.label}は低い方が良い指標なので、低い店舗を上位にしています。` : `${metric.label}は高い方が良い指標として順位付けしています。`,
+  ];
+  els.storeCompareInsight.innerHTML = insightRows.map((textValue) => `<div class="insight">${escapeHtml(textValue)}</div>`).join("");
+}
+
+function renderStoreCompareControls() {
+  const monthKeys = allStoreMonthKeys();
+  if (els.storeCompareMonth) {
+    const current = els.storeCompareMonth.value;
+    els.storeCompareMonth.innerHTML = monthKeys.map((key) => `<option value="${key}">${monthLabelFromKey(key)}</option>`).join("");
+    els.storeCompareMonth.value = monthKeys.includes(current) ? current : monthKeys[0] || "";
+  }
+  if (els.storeComparePeriodStart && !els.storeComparePeriodStart.value && monthKeys.length) {
+    const latest = monthKeys[0];
+    const [year, month] = latest.split("-").map(Number);
+    const startMonth = `${year}-${pad2(Math.max(1, month - 2))}`;
+    els.storeComparePeriodStart.value = startMonth;
+    els.storeComparePeriodEnd.value = latest;
+  }
+}
+
+function allStoreMonthKeys() {
+  return [...new Set([...state.daily.map((row) => row.key), ...state.financials.map((row) => row.key)])]
+    .filter(Boolean)
+    .sort((a, b) => b.localeCompare(a));
+}
+
+function monthLabelFromKey(key) {
+  if (!key) return "-";
+  const [year, month] = key.split("-").map(Number);
+  return `${year}年${month}月`;
+}
+
+function buildStoreCompareMonthRows() {
+  const key = els.storeCompareMonth?.value;
+  if (!key) return [];
+  const stores = getStoreOptions();
+  return stores
+    .map((store) => {
+      const monthly = buildMonthlyForStore(store.storeKey);
+      const item = monthly.find((row) => row.key === key);
+      if (!item) return null;
+      const previous = monthly.find((row) => row.year === item.year - 1 && row.month === item.month);
+      return storeCompareRowFromMonthly(store, item, previous);
+    })
+    .filter(Boolean);
+}
+
+function storeCompareRowFromMonthly(store, item, previous) {
+  const row = {
+    storeKey: store.storeKey,
+    storeName: store.storeName,
+    key: item.key,
+    days: item.days,
+    sales: item.sales,
+    dailySales: div(item.sales, item.days),
+    customers: item.customers,
+    unit: item.unit,
+    lunch: item.lunch,
+    dinner: item.dinner,
+    drink: item.drink,
+    drinkRatio: item.drinkRatio,
+    profit: item.profit,
+    laborCost: item.laborCost,
+    cost: item.cost,
+    laborRatio: div(item.laborCost, item.sales),
+    costRatio: div(item.cost, item.sales),
+  };
+  const metricKey = els.storeCompareMetric?.value || "sales";
+  const metric = STORE_COMPARE_METRICS[metricKey] || STORE_COMPARE_METRICS.sales;
+  const currentValue = storeCompareMetricValue(row, metricKey);
+  const previousRow = previous ? storeCompareRowFromMonthly(store, previous, null) : null;
+  const previousValue = previousRow ? storeCompareMetricValue(previousRow, metricKey) : null;
+  row.metricYoY = metric.type === "ratio" ? diffNumber(currentValue, previousValue) : pctChange(currentValue, previousValue);
+  return row;
+}
+
+function buildStoreComparePeriodRows() {
+  const startMonth = els.storeComparePeriodStart?.value;
+  const endMonth = els.storeComparePeriodEnd?.value;
+  if (!startMonth || !endMonth || startMonth > endMonth) return [];
+  return getStoreOptions()
+    .map((store) => aggregateStorePeriod(store, startMonth, endMonth))
+    .filter((row) => row && (Number.isFinite(row.sales) || Number.isFinite(row.profit) || Number.isFinite(row.customers)));
+}
+
+function aggregateStorePeriod(store, startMonth, endMonth) {
+  const start = new Date(`${startMonth}-01T00:00:00`);
+  const end = endOfMonth(endMonth);
+  const dailyRows = state.daily.filter((row) => (row.storeKey || DEFAULT_STORE_KEY) === store.storeKey).filter((row) => {
+    const date = new Date(`${row.date}T00:00:00`);
+    return date >= start && date <= end;
+  });
+  const financialRows = state.financials.filter((row) => (row.storeKey || DEFAULT_STORE_KEY) === store.storeKey && row.key >= startMonth && row.key <= endMonth);
+  if (!dailyRows.length && !financialRows.length) return null;
+  const agg = aggregateDaily(dailyRows);
+  const financialSales = sumFinite(financialRows, "sales");
+  const sales = Number.isFinite(financialSales) ? financialSales : agg.sales;
+  const profit = sumFinite(financialRows, "profit");
+  const laborCost = sumFinite(financialRows, "laborCost");
+  const cost = sumFinite(financialRows, "cost");
+  return {
+    storeKey: store.storeKey,
+    storeName: store.storeName,
+    days: agg.days,
+    sales,
+    dailySales: div(sales, agg.days),
+    customers: agg.customers,
+    unit: div(sales, agg.customers),
+    lunch: agg.lunch,
+    dinner: agg.dinner,
+    drink: agg.drink,
+    drinkRatio: div(agg.drink, sales),
+    profit,
+    laborCost,
+    cost,
+    laborRatio: div(laborCost, sales),
+    costRatio: div(cost, sales),
+  };
+}
+
+function sumFinite(rows, key) {
+  const values = rows.map((row) => row[key]).filter(Number.isFinite);
+  return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
+}
+
+function rankStoreCompareRows(rows, metricKey) {
+  const metric = STORE_COMPARE_METRICS[metricKey] || STORE_COMPARE_METRICS.sales;
+  return rows.slice().sort((a, b) => {
+    const av = storeCompareMetricValue(a, metricKey);
+    const bv = storeCompareMetricValue(b, metricKey);
+    if (!Number.isFinite(av) && !Number.isFinite(bv)) return a.storeName.localeCompare(b.storeName, "ja");
+    if (!Number.isFinite(av)) return 1;
+    if (!Number.isFinite(bv)) return -1;
+    return metric.lowerBetter ? av - bv : bv - av;
+  });
+}
+
+function storeCompareMetricValue(row, metricKey) {
+  if (!row) return null;
+  if (metricKey === "sales") return row.sales;
+  if (metricKey === "profit") return row.profit;
+  if (metricKey === "dailySales") return row.dailySales;
+  if (metricKey === "customers") return row.customers;
+  if (metricKey === "unit") return row.unit;
+  if (metricKey === "drinkRatio") return row.drinkRatio;
+  if (metricKey === "laborRatio") return row.laborRatio;
+  if (metricKey === "costRatio") return row.costRatio;
+  return row.sales;
+}
+
+function formatStoreCompareValue(value, type) {
+  if (type === "profit") return profitYen(value);
+  if (type === "yen") return yen(value);
+  if (type === "ratio") return percent(value);
+  return integer(value);
+}
+
+function formatStoreCompareDiff(value, metric, mode) {
+  if (mode === "period") {
+    if (metric.type === "ratio") return markerPoint(value, metric.lowerBetter);
+    if (metric.type === "count") return signedNumber(value);
+    return markerYen(value, metric.lowerBetter);
+  }
+  if (metric.type === "ratio") return markerPoint(value, metric.lowerBetter);
+  return marker(value, "", metric.lowerBetter);
+}
+
 function renderEventImpact() {
   const events = state.events.filter((event) => !event.storeKey || event.storeKey === getActiveStoreKey());
   if (!events.length) {
@@ -2233,16 +2526,70 @@ async function restoreBackup(file) {
   const textValue = await file.text();
   const parsed = JSON.parse(textValue);
   const restored = normalizeState(parsed);
+  assignStoreToUnlabeledEvents(restored, Array.isArray(parsed.events) ? parsed.events : []);
   if (!restored.daily.length && !restored.financials.length && !restored.events.length && !restored.files.length) {
     throw new Error("登録データが入っていないバックアップです。");
   }
-  state.daily = restored.daily;
-  state.financials = restored.financials;
-  state.events = restored.events;
-  state.files = restored.files;
+  const storeKeys = storeKeysFromState(restored);
+  if (!storeKeys.length) {
+    throw new Error("バックアップ内の店舗を判別できませんでした。");
+  }
+  replaceStoresFromBackup(restored, storeKeys);
+  activeStoreKey = storeKeys[0] || activeStoreKey;
+  activeMonthKey = "";
+  pendingMonthYear = null;
   saveState();
   renderAll();
-  setMessage("バックアップを読み込みました。");
+  const storeNames = storeKeys.map((key) => getStoreNameFromKey(key, restored)).join("、");
+  setMessage(`${storeNames} のバックアップを読み込みました。他店舗のデータは残しています。`);
+}
+
+function assignStoreToUnlabeledEvents(restored, rawEvents) {
+  const dataStoreKeys = storeKeysFromState({
+    daily: restored.daily,
+    financials: restored.financials,
+    events: [],
+    files: restored.files,
+  });
+  if (dataStoreKeys.length !== 1) return;
+  const storeKey = dataStoreKeys[0];
+  const storeName = getStoreNameFromKey(storeKey, restored);
+  restored.events = restored.events.map((event, index) => {
+    const raw = rawEvents[index] || {};
+    if (raw.storeKey || raw.storeName) return event;
+    return { ...event, storeKey, storeName };
+  });
+}
+
+function replaceStoresFromBackup(restored, storeKeys) {
+  const targets = new Set(storeKeys);
+  state.daily = [
+    ...state.daily.filter((item) => !targets.has(item.storeKey || DEFAULT_STORE_KEY)),
+    ...restored.daily,
+  ];
+  state.financials = [
+    ...state.financials.filter((item) => !targets.has(item.storeKey || DEFAULT_STORE_KEY)),
+    ...restored.financials,
+  ];
+  state.events = [
+    ...state.events.filter((item) => !targets.has(item.storeKey || DEFAULT_STORE_KEY)),
+    ...restored.events,
+  ];
+  state.files = [
+    ...state.files.filter((item) => !targets.has(item.storeKey || DEFAULT_STORE_KEY)),
+    ...restored.files,
+  ];
+}
+
+function storeKeysFromState(source) {
+  return [...new Set([...source.daily, ...source.financials, ...source.events, ...source.files]
+    .map((item) => item.storeKey || DEFAULT_STORE_KEY)
+    .filter(Boolean))];
+}
+
+function getStoreNameFromKey(storeKey, source = state) {
+  const item = [...source.daily, ...source.financials, ...source.events, ...source.files].find((row) => row.storeKey === storeKey);
+  return item?.storeName || AREA_STORE_NAMES.find((name) => normalizeStoreKey(name) === storeKey) || storeKey;
 }
 
 function normalizeState(value) {

@@ -728,6 +728,10 @@ input[type="text"] {
   margin-bottom: 12px;
 }
 
+.store-compare-controls {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .period-controls > div {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -737,6 +741,10 @@ input[type="text"] {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel-soft);
+}
+
+.period-controls > div[hidden] {
+  display: none;
 }
 
 .period-controls strong {
